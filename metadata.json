@@ -1,0 +1,7 @@
+{
+  "name": "LuminaAI - Creative Studio",
+  "description": "A high-performance AI image generation suite featuring prompt enhancement, multi-format export, and high-resolution upscaling.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
