@@ -76,3 +76,19 @@ body {
 
 /* Range/select resets for dark theme */
 select option { background-color: #0f172a; color: #e2e8f0; }
+
+/*
+ * Respect reduced-motion preferences for the entrance animations only. The
+ * spinners/shimmer are intentionally left running: they are the "work in
+ * progress" signal for a generation that can take a minute, and freezing them
+ * would look like the app hung.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-zoom-in,
+  .animate-slide-up,
+  .animate-slide-down { animation-duration: 0.01ms !important; }
+}
+
+/* Images that fail to decode keep their frame instead of collapsing the layout. */
+img { min-width: 0; }
