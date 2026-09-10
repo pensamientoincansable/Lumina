@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Lumina AI — Free AI image generation studio. Multiple artistic styles, aspect ratios and export formats. No subscription required." />
+  <meta name="theme-color" content="#0b0f1a" />
+  <title>Lumina AI · Free Creative Studio</title>
+
+  <style>
+    /* Inlined so the very first paint is already dark and centred: avoids the
+       white flash and keeps the loading state readable even if styles.css or the
+       font CDN never arrive. */
+    html { background-color: #0b0f1a; color-scheme: dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background-color: #0b0f1a;
+      color: #f8fafc;
+      font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    #boot {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      text-align: center;
+      padding: 24px;
+      z-index: 5;
+    }
+    /* Hidden as soon as React has mounted anything into #root. */
+    #root:not(:empty) ~ #boot { display: none !important; }
+    #boot .boot-mark {
+      width: 56px; height: 56px; border-radius: 16px;
+      background: linear-gradient(135deg, #4f46e5, #c084fc);
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 28px; font-weight: 900;
+      animation: boot-pulse 1.4s ease-in-out infinite;
+    }
+    #boot .boot-label { font-size: 12px; letter-spacing: .28em; text-transform: uppercase; color: #818cf8; font-weight: 700; }
+    #boot .boot-detail { max-width: 640px; font-size: 13px; line-height: 1.6; color: #94a3b8; white-space: pre-wrap; word-break: break-word; text-align: left; }
+    #boot.is-error .boot-mark { animation: none; }
+    #boot .boot-detail code { color: #fca5a5; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    #boot button {
+      font: inherit; font-size: 12px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+      color: #fff; background: #4f46e5; border: 0; border-radius: 999px; padding: 10px 22px; cursor: pointer;
+    }
+    #boot button:hover { background: #4338ca; }
+    @keyframes boot-pulse { 0%, 100% { opacity: .55; transform: scale(.96); } 50% { opacity: 1; transform: scale(1); } }
+    @media (prefers-reduced-motion: reduce) { #boot .boot-mark { animation: none; } }
+  </style>
+
+  <!--
+    Fonts are a progressive enhancement. They are loaded NON-BLOCKING on purpose:
+    a <link rel="stylesheet"> to a CDN that is slow, firewalled or blocked
+    (offline dev boxes, sandboxes, some regions) is render-blocking and leaves the
+    whole page white/blank until it times out. The app renders with the system UI
+    font stack and upgrades to Inter when the sheet loads.
+  -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" />
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" /></noscript>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%236366f1'/%3E%3Cstop offset='1' stop-color='%23c084fc'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='24' fill='url(%23g)'/%3E%3Ctext x='50' y='72' font-size='62' font-family='Arial' font-weight='900' fill='white' text-anchor='middle'%3EL%3C/text%3E%3C/svg%3E" />
+  <script type="module" crossorigin src="./assets/index-CXNsVjG0.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/gemini-sdk-B5viauWS.js">
+  <link rel="stylesheet" crossorigin href="./assets/index-ciJiEJy7.css">
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Visible loading/error state — a sibling of #root so React never fights over it. -->
+  <div id="boot" role="status" aria-live="polite">
+    <div class="boot-mark">L</div>
+    <div class="boot-label">Loading Lumina…</div>
+    <div class="boot-detail" id="boot-detail" hidden></div>
+  </div>
+
+  <script>
+    /*
+     * Boot guard — the reason a broken SPA shows a *blank* page is that the failure
+     * is silent: a module that fails to load, or a crash while mounting, leaves
+     * #root empty with the error only in the console. This turns any of those into a
+     * readable message. It only ever paints while #root is still empty, so it can
+     * never interfere with a working app.
+     */
+    (function () {
+      var boot = document.getElementById('boot');
+      var detail = document.getElementById('boot-detail');
+      var root = document.getElementById('root');
+      var reported = false;
+
+      function isEmpty() { return !root || root.childElementCount === 0; }
+
+      function show(title, lines) {
+        if (reported || !isEmpty()) return;
+        reported = true;
+        boot.classList.add('is-error');
+        var label = boot.querySelector('.boot-label');
+        if (label) label.textContent = title;
+        var text = (lines || []).filter(Boolean).join('\n');
+        if (text) {
+          detail.hidden = false;
+          detail.textContent = text;
+        }
+        if (boot.querySelector('button')) return;
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = 'Reload';
+        btn.onclick = function () { location.reload(); };
+        boot.appendChild(btn);
+      }
+
+      window.__luminaBootFail = show;
+
+      window.addEventListener('error', function (e) {
+        // Only a failed *script* is fatal. Other resource errors (the optional font
+        // stylesheet, a picture that 404s) are non-critical and are already handled
+        // inside the UI, so reporting them would be a false alarm.
+        var target = e.target;
+        if (target && target !== window && target.tagName) {
+          if (target.tagName === 'SCRIPT' && isEmpty()) {
+            show('Could not load the app bundle', [
+              (target.src || target.href || 'script element'),
+              'If this is the dev server: stop it, delete node_modules/.vite, then run npm run dev again.',
+            ]);
+          }
+          return;
+        }
+        if (isEmpty()) show('The app crashed while starting', [e.message, e.filename ? e.filename + ':' + e.lineno : '']);
+      }, true);
+
+      window.addEventListener('unhandledrejection', function (e) {
+        var r = e.reason;
+        if (isEmpty()) show('The app crashed while starting', [r && r.message ? r.message : String(r)]);
+      });
+
+      // A stalled module graph (proxy hiccup, stale dev-server cache) also ends up blank.
+      setTimeout(function () {
+        if (isEmpty()) {
+          show('Still loading…', [
+            'The page could not finish starting up. In development this usually means the Vite dev server needs a restart:',
+            '  1) stop the server  2) delete node_modules/.vite  3) npm run dev',
+          ]);
+        }
+      }, 15000);
+    })();
+  </script>
+
+  <!-- Entry point required by Vite — without this the page would render blank -->
+
+  <noscript>
+    <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;color:#e2e8f0">
+      Lumina AI needs JavaScript enabled to run the studio.
+    </div>
+  </noscript>
+</body>
+</html>
