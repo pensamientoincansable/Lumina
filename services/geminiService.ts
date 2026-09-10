@@ -1,103 +1,106 @@
+/**
+ * Google Gemini — optional premium engine.
+ *
+ * A free API key can be created at https://aistudio.google.com/apikey (no credit card).
+ * Image generation on the free tier depends on Google's current per-project quota;
+ * when it is unavailable the app automatically routes to the free Pollinations engine.
+ */
 
-import { GoogleGenAI } from "@google/genai";
+import type { GoogleGenAI } from '@google/genai';
+import { getGeminiKey } from './keyStore';
+import { AspectRatio } from '../types';
 
-const getAIClient = () => new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+const IMAGE_MODEL = 'gemini-2.5-flash-image';
+const TEXT_MODEL = 'gemini-2.5-flash';
 
-export const enhancePrompt = async (prompt: string): Promise<string> => {
-  const ai = getAIClient();
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: `Transform this simple image prompt into a detailed, professional AI art prompt for high-quality results. Focus on lighting, texture, artistic style, and composition. Keep it concise. Original prompt: "${prompt}"`,
-    config: {
-      temperature: 0.7,
-      maxOutputTokens: 200,
-    }
-  });
-  return response.text || prompt;
-};
+// Loaded lazily so the heavy SDK only ships to users who actually configure a key.
+async function getAIClient(): Promise<GoogleGenAI> {
+  const apiKey = getGeminiKey();
+  if (!apiKey) {
+    throw new Error('No Gemini API key configured. Add one in Settings or in .env.local (GEMINI_API_KEY).');
+  }
+  const { GoogleGenAI: Client } = await import('@google/genai');
+  return new Client({ apiKey });
+}
 
-export const generateImage = async (prompt: string, style: string, aspectRatio: string = '1:1'): Promise<string> => {
-  const ai = getAIClient();
-  const finalPrompt = style === 'None' ? prompt : `${prompt}, in the style of ${style}, highly detailed, professional composition`;
-  
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-image',
-    contents: {
-      parts: [{ text: finalPrompt }]
-    },
-    config: {
-      imageConfig: {
-        aspectRatio: aspectRatio as any
-      }
-    }
-  });
+/** Normalizes provider errors into friendly, actionable messages. */
+function friendlyError(err: any): Error {
+  const msg = String(err?.message ?? err ?? 'Unknown error');
+  if (/API key not valid|API_KEY_INVALID/i.test(msg)) {
+    return new Error('Your Gemini API key is not valid. Check it in Settings (get a free one at aistudio.google.com/apikey).');
+  }
+  if (/quota|429|RESOURCE_EXHAUSTED/i.test(msg)) {
+    return new Error('Gemini free quota exhausted for today. Switch the engine to “Free (Pollinations)” or try again tomorrow.');
+  }
+  if (/403|PERMISSION_DENIED|billing|paid/i.test(msg)) {
+    return new Error('This Gemini image model currently requires billing on your project. Use the free Pollinations engine instead.');
+  }
+  return new Error(msg.slice(0, 220));
+}
 
-  let imageUrl = '';
-  for (const part of response.candidates?.[0]?.content?.parts || []) {
-    if (part.inlineData) {
-      imageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-      break;
+function extractInlineImage(response: any): string | null {
+  for (const part of response?.candidates?.[0]?.content?.parts ?? []) {
+    if (part?.inlineData?.data) {
+      return `data:${part.inlineData.mimeType ?? 'image/png'};base64,${part.inlineData.data}`;
     }
   }
+  return null;
+}
 
-  if (!imageUrl) throw new Error('No image was generated');
-  return imageUrl;
-};
-
-export const upscaleImage = async (base64Data: string): Promise<string> => {
-  const ai = getAIClient();
-  const data = base64Data.split(',')[1];
-  const mimeType = base64Data.split(';')[0].split(':')[1];
-
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-image',
-    contents: {
-      parts: [
-        { inlineData: { data, mimeType } },
-        { text: "Increase resolution, enhance details, and sharpen this image significantly while maintaining the original subject and composition." }
-      ]
-    }
-  });
-
-  let enhancedUrl = '';
-  for (const part of response.candidates?.[0]?.content?.parts || []) {
-    if (part.inlineData) {
-      enhancedUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-      break;
-    }
+/** Enhances a raw prompt into a detailed art prompt (Gemini text model). */
+export async function enhancePromptWithGemini(prompt: string): Promise<string> {
+  try {
+    const ai = await getAIClient();
+    const response = await ai.models.generateContent({
+      model: TEXT_MODEL,
+      contents:
+        'You are an expert AI-art prompt engineer. Rewrite the user\'s idea as a single, vivid, detailed image-generation prompt. ' +
+        'Focus on subject, lighting, textures, camera/composition and mood. Output ONLY the improved prompt, max 90 words, no quotes, no preamble.\n\n' +
+        `Idea: "${prompt}"`,
+      config: { temperature: 0.8, maxOutputTokens: 220 },
+    });
+    return response.text?.trim() || prompt;
+  } catch (err) {
+    throw friendlyError(err);
   }
+}
 
-  return enhancedUrl || base64Data;
-};
-
-export const generateMotion = async (base64Image: string, prompt: string, aspectRatio: string = '1:1'): Promise<string> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-  const data = base64Image.split(',')[1];
-  const mimeType = base64Image.split(';')[0].split(':')[1];
-
-  let operation = await ai.models.generateVideos({
-    model: 'veo-3.1-fast-generate-preview',
-    prompt: `Add cinematic motion and subtle animation to this scene: ${prompt}`,
-    image: {
-      imageBytes: data,
-      mimeType: mimeType,
-    },
-    config: {
-      numberOfVideos: 1,
-      resolution: '720p',
-      aspectRatio: aspectRatio === '1:1' ? '16:9' : (aspectRatio as any) // Veo supports 16:9/9:16 primarily
-    }
-  });
-
-  while (!operation.done) {
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    operation = await ai.operations.getVideosOperation({ operation: operation });
+/** Text-to-image with Gemini (returns a data URL). */
+export async function generateWithGemini(prompt: string, aspectRatio: AspectRatio): Promise<string> {
+  try {
+    const ai = await getAIClient();
+    const response = await ai.models.generateContent({
+      model: IMAGE_MODEL,
+      contents: { parts: [{ text: prompt }] },
+      config: { imageConfig: { aspectRatio: aspectRatio as any } },
+    });
+    const url = extractInlineImage(response);
+    if (!url) throw new Error('Gemini did not return an image (it may have refused the prompt). Try rewording it.');
+    return url;
+  } catch (err) {
+    throw friendlyError(err);
   }
+}
 
-  const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-  if (!downloadLink) throw new Error('Failed to generate motion');
-
-  const response = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
-  const blob = await response.blob();
-  return URL.createObjectURL(blob);
-};
+/** Image-to-image detail/upscale pass with Gemini (returns a data URL). */
+export async function upscaleWithGemini(dataUrl: string): Promise<string> {
+  try {
+    const ai = await getAIClient();
+    const [header, data] = dataUrl.split(',');
+    const mimeType = header.split(';')[0].split(':')[1] ?? 'image/png';
+    const response = await ai.models.generateContent({
+      model: IMAGE_MODEL,
+      contents: {
+        parts: [
+          { inlineData: { data, mimeType } },
+          { text: 'Recreate this exact image with higher resolution, sharper details and cleaner textures. Keep the same subject, colors and composition.' },
+        ],
+      },
+    });
+    const url = extractInlineImage(response);
+    if (!url) throw new Error('Gemini did not return an enhanced image.');
+    return url;
+  } catch (err) {
+    throw friendlyError(err);
+  }
+}
