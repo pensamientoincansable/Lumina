@@ -29,6 +29,14 @@ npm run build    # production build → dist/
 npm run typecheck
 ```
 
+### GitHub Pages
+
+The repository includes a GitHub Actions deployment workflow in `.github/workflows/deploy.yml`.
+After merging to `main`, enable **Settings → Pages → GitHub Actions** as the Pages source
+(if GitHub has not enabled it automatically). The workflow builds the Vite app first and
+publishes `dist/`, rather than serving the TypeScript source file directly. This is required
+for the app bundle and relative assets to load correctly on a Pages subpath.
+
 No `.env` file is needed for the free engine.
 
 ## 🔑 Where to get FREE API keys (no subscription, no credit card)
