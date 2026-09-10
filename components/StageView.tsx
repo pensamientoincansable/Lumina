@@ -21,12 +21,24 @@ const LOADING_LINES = [
   'Almost there — polishing pixels…',
 ];
 
+/** Cache-buster so a re-download is actually attempted (Pollinations caches by URL). */
+const retryableSrc = (url: string, nonce: number) =>
+  nonce && /^https?:/i.test(url) ? `${url}${url.includes('?') ? '&' : '?'}r=${nonce}` : url;
+
 const StageView: React.FC<StageViewProps> = ({
   image, isGenerating, isUpscaling, statusMessage, onExport, onUpscale, onVariation, onSave, isSaved,
 }) => {
   const [lineIdx, setLineIdx] = useState(0);
   const [lightbox, setLightbox] = useState(false);
+  // A failed <img> used to leave the stage visually empty (the other "blank page"),
+  // with the reason only in the network tab. Track it and offer a retry instead.
+  const [failed, setFailed] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
   const busy = isGenerating || isUpscaling;
+
+  useEffect(() => {
+    setFailed(false);
+  }, [image?.url]);
 
   useEffect(() => {
     if (!busy) return;
@@ -44,14 +56,31 @@ const StageView: React.FC<StageViewProps> = ({
   return (
     <div className="space-y-5">
       <div className="glass-panel rounded-[28px] w-full min-h-[320px] md:min-h-[520px] max-h-[72vh] relative overflow-hidden flex items-center justify-center stage-bg">
-        {image ? (
+        {image && !failed ? (
           <img
-            src={image.url}
+            src={retryableSrc(image.url, retryNonce)}
             alt={image.originalPrompt}
             className="max-h-[72vh] w-full object-contain animate-zoom-in cursor-zoom-in select-none"
             onClick={() => !busy && setLightbox(true)}
+            onError={() => setFailed(true)}
             draggable={false}
           />
+        ) : image ? (
+          <div className="text-center space-y-4 p-10 max-w-md">
+            <div className="text-4xl">🖼️</div>
+            <p className="text-lg font-black text-white tracking-tight italic">This image could not be displayed</p>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              The source is unreachable from this browser — usually because the free engine is offline,
+              your network blocks <span className="text-slate-200 font-semibold">image.pollinations.ai</span>, or the
+              temporary local copy expired. Your prompt and settings are still here, so you can just retry.
+            </p>
+            <button
+              onClick={() => { setRetryNonce((n) => n + 1); setFailed(false); }}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black uppercase tracking-widest px-5 py-2.5 rounded-xl transition-colors"
+            >
+              Try loading it again
+            </button>
+          </div>
         ) : (
           !busy && (
             <div className="text-center space-y-4 p-10 opacity-30">
@@ -159,7 +188,12 @@ const StageView: React.FC<StageViewProps> = ({
           className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in cursor-zoom-out"
           onClick={() => setLightbox(false)}
         >
-          <img src={image.url} alt={image.originalPrompt} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+          <img
+            src={image.url}
+            alt={image.originalPrompt}
+            onError={() => setLightbox(false)}
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+          />
           <div className="absolute bottom-5 left-1/2 -translate-x-1/2 max-w-3xl glass-panel rounded-2xl px-5 py-3 mx-4">
             <p className="text-xs text-slate-300 text-center line-clamp-2">{image.prompt}</p>
           </div>

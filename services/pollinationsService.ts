@@ -30,6 +30,24 @@ export interface PollinationsResult {
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAYS_MS = [6000, 12000];
 const REQUEST_TIMEOUT_MS = 180_000;
+/** Transient engine problems worth waiting for. */
+const RETRYABLE_STATUS = [402, 429, 500, 502, 503, 504];
+
+/** Signals "retrying is pointless" so the caller fails fast with a clear message. */
+class PermanentError extends Error {}
+
+function describeNetworkError(err: unknown): Error {
+  const name = (err as any)?.name;
+  if (name === 'AbortError') {
+    return new Error('Generation timed out. The free engine may be overloaded — try again.');
+  }
+  // fetch() rejects with TypeError for DNS/offline/CORS/blocked-host failures, which
+  // used to surface as an opaque "Failed to fetch".
+  return new Error(
+    'Could not reach image.pollinations.ai. Your network may be offline, or the host is '
+    + 'blocked (firewall, ad-blocker, corporate proxy). Check the connection and try again.',
+  );
+}
 
 export function buildPollinationsUrl(req: PollinationsRequest): string {
   const params = new URLSearchParams({
@@ -63,28 +81,43 @@ export async function generateWithPollinations(
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
       if (attempt > 0) onStatus?.(`Free engine is busy — retrying (attempt ${attempt + 1}/${MAX_ATTEMPTS})…`);
-      const res = await fetch(sourceUrl, { signal: controller.signal });
+      let res: Response;
+      try {
+        res = await fetch(sourceUrl, { signal: controller.signal });
+      } catch (err) {
+        throw new PermanentError(describeNetworkError(err).message, { cause: err });
+      }
       if (res.ok) {
         const blob = await res.blob();
         if (!blob.type.startsWith('image/')) {
-          throw new Error('The free engine returned an unexpected response.');
+          throw new PermanentError('The free engine returned an unexpected response (not an image). It may be down for maintenance — try again in a minute.');
+        }
+        if (!blob.size) {
+          throw new PermanentError('The free engine returned an empty image. Try generating again.');
         }
         return { displayUrl: URL.createObjectURL(blob), sourceUrl };
       }
+      const body = await res.text().catch(() => '');
       // 402/429 = anonymous rate limit, 5xx = transient worker errors → retry.
-      if ([402, 429, 500, 502, 503, 504].includes(res.status)) {
-        lastError = new Error(`Free engine rate-limited (HTTP ${res.status}).`);
+      if (RETRYABLE_STATUS.includes(res.status)) {
+        lastError = new Error(
+          res.status === 429 || res.status === 402
+            ? `The free engine is rate-limiting anonymous requests (HTTP ${res.status}).`
+            : `The free engine is unavailable right now (HTTP ${res.status}).`,
+        );
       } else {
-        const text = await res.text().catch(() => '');
-        throw new Error(`Generation failed (HTTP ${res.status})${text ? `: ${text.slice(0, 140)}` : ''}`);
+        throw new PermanentError(`Generation failed (HTTP ${res.status})${body ? `: ${body.slice(0, 140)}` : ''}`);
       }
     } catch (err: any) {
+      // A permanent failure (bad prompt, blocked host, 4xx) must not burn 3 attempts
+      // and ~18s of cooldown before telling the user.
+      if (err instanceof PermanentError) throw err;
       if (err?.name === 'AbortError') {
-        lastError = new Error('Generation timed out. The free engine may be overloaded — try again.');
+        lastError = describeNetworkError(err);
       } else {
         lastError = err instanceof Error ? err : new Error(String(err));
       }
-      // Network errors are also retryable.
+      // Any other error (network blip, aborted stream) is retryable.
     } finally {
       clearTimeout(timer);
     }
@@ -96,7 +129,7 @@ export async function generateWithPollinations(
     }
   }
 
-  throw lastError ?? new Error('Image generation failed.');
+  throw lastError ?? new Error('Image generation failed after several attempts. The free engine is likely congested — please try again.');
 }
 
 /**
@@ -110,14 +143,20 @@ export async function pollinationsText(prompt: string): Promise<string | null> {
     if (key) params.set('key', key);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 30_000);
-    const res = await fetch(
-      `https://text.pollinations.ai/${encodeURIComponent(prompt)}?${params.toString()}`,
-      { signal: controller.signal },
-    );
-    clearTimeout(timer);
-    if (!res.ok) return null;
-    const text = (await res.text()).trim();
-    return text || null;
+    try {
+      const res = await fetch(
+        `https://text.pollinations.ai/${encodeURIComponent(prompt)}?${params.toString()}`,
+        { signal: controller.signal },
+      );
+      // A 200 whose body is an HTML error page would otherwise be injected into the
+      // prompt box, so only accept plain text back.
+      const type = res.headers.get('content-type') ?? '';
+      if (!res.ok || type.includes('text/html')) return null;
+      const text = (await res.text()).trim();
+      return text && text.length < 5000 ? text : null;
+    } finally {
+      clearTimeout(timer);
+    }
   } catch {
     return null;
   }

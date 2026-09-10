@@ -8,7 +8,8 @@ import { generateWithPollinations } from './services/pollinationsService';
 import { enhancePrompt as enhancePromptCascade } from './services/enhanceService';
 import { exportImage, localUpscale } from './services/imageTools';
 import { hasGeminiKey } from './services/keyStore';
-import { addToHistory, loadHistory, removeFromHistory } from './services/historyStore';
+import { addToHistory, clearHistory, loadHistory, removeFromHistory } from './services/historyStore';
+import { isObjectUrl, revokeObjectUrl, uid } from './utils';
 import GeneratePanel from './components/GeneratePanel';
 import StageView from './components/StageView';
 import HistoryView from './components/HistoryView';
@@ -25,6 +26,37 @@ const PROMPT_IDEAS = [
 
 let toastSeq = 1;
 
+type View = 'generate' | 'gallery';
+
+/**
+ * Studio / Gallery switcher.
+ *
+ * It used to exist only inside the header's `hidden sm:flex` nav, which left phone
+ * users with no way to reach their gallery at all — so it is rendered twice:
+ * inline in the header on ≥640px and as a full-width bar below it on smaller screens.
+ */
+const ViewSwitcher: React.FC<{
+  view: View;
+  count: number;
+  onChange: (v: View) => void;
+  className?: string;
+}> = ({ view, count, onChange, className = '' }) => (
+  <div className={`items-center gap-1 bg-slate-900/60 rounded-full p-1 border border-white/5 ${className}`}>
+    {(['generate', 'gallery'] as const).map((v) => (
+      <button
+        key={v}
+        onClick={() => onChange(v)}
+        aria-current={view === v ? 'page' : undefined}
+        className={`flex-1 text-center text-xs font-black tracking-widest uppercase px-5 py-2 rounded-full transition-all ${
+          view === v ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-slate-400 hover:text-white'
+        }`}
+      >
+        {v === 'generate' ? 'Studio' : `Gallery${count ? ` (${count})` : ''}`}
+      </button>
+    ))}
+  </div>
+);
+
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(() => {
     try {
@@ -36,7 +68,7 @@ const App: React.FC = () => {
   });
   const [showAuth, setShowAuth] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [view, setView] = useState<'generate' | 'gallery'>('generate');
+  const [view, setView] = useState<View>('generate');
 
   const [prompt, setPrompt] = useState('');
   const [styleId, setStyleId] = useState('none');
@@ -81,6 +113,25 @@ const App: React.FC = () => {
 
   const saveImage = useCallback((img: GeneratedImage) => {
     setHistory((h) => addToHistory(h, img));
+  }, []);
+
+  // The stage shows a session-scoped blob: URL for instant display, while the gallery
+  // stores durable URLs. Keep a ref so a replaced blob can be released (unreleased
+  // blobs pile up in memory for the lifetime of the tab) and so history reads inside
+  // callbacks never see a stale closure value.
+  const historyRef = useRef<GeneratedImage[]>(history);
+  const stageObjectUrl = useRef<string | null>(null);
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
+
+  const showImage = useCallback((img: GeneratedImage | null) => {
+    const previous = stageObjectUrl.current;
+    stageObjectUrl.current = img && isObjectUrl(img.url) ? img.url : null;
+    setCurrentImage(img);
+    if (previous && previous !== stageObjectUrl.current && !historyRef.current.some((e) => e.url === previous)) {
+      revokeObjectUrl(previous);
+    }
   }, []);
 
   const effectiveSeed = (variation: boolean): number => {
@@ -131,7 +182,7 @@ const App: React.FC = () => {
         setStatusMessage('Contacting Gemini image model…');
         try {
           const dataUrl = await gemini.generateWithGemini(finalPrompt, aspectRatio);
-          img = { ...base, id: crypto.randomUUID(), url: dataUrl, sourceUrl: dataUrl, engine: 'gemini', timestamp: Date.now() };
+          img = { ...base, id: uid(), url: dataUrl, sourceUrl: dataUrl, engine: 'gemini', timestamp: Date.now() };
         } catch (err: any) {
           // Auto mode: fall back to the free engine if Gemini quota/billing fails.
           if (engine === 'auto') {
@@ -143,7 +194,7 @@ const App: React.FC = () => {
             { prompt: finalPrompt, width: ratio.width, height: ratio.height, seed: finalSeed, model: pollinationsModel },
             setStatusMessage,
           );
-          img = { ...base, id: crypto.randomUUID(), url: result.displayUrl, sourceUrl: result.sourceUrl, engine: 'pollinations', model: pollinationsModel, timestamp: Date.now() };
+          img = { ...base, id: uid(), url: result.displayUrl, sourceUrl: result.sourceUrl, engine: 'pollinations', model: pollinationsModel, timestamp: Date.now() };
         }
       } else {
         setStatusMessage('Contacting the free FLUX engine…');
@@ -151,10 +202,10 @@ const App: React.FC = () => {
           { prompt: finalPrompt, width: ratio.width, height: ratio.height, seed: finalSeed, model: pollinationsModel },
           setStatusMessage,
         );
-        img = { ...base, id: crypto.randomUUID(), url: result.displayUrl, sourceUrl: result.sourceUrl, engine: 'pollinations', model: pollinationsModel, timestamp: Date.now() };
+        img = { ...base, id: uid(), url: result.displayUrl, sourceUrl: result.sourceUrl, engine: 'pollinations', model: pollinationsModel, timestamp: Date.now() };
       }
 
-      setCurrentImage(img);
+      showImage(img);
       saveImage(img);
       pushToast('success', 'Image generated and saved to your gallery.');
     } catch (err: any) {
@@ -200,7 +251,7 @@ const App: React.FC = () => {
         newUrl = await localUpscale(currentImage.url, setStatusMessage);
       }
       const updated = { ...currentImage, url: newUrl, sourceUrl: newUrl };
-      setCurrentImage(updated);
+      showImage(updated);
       saveImage(updated);
       pushToast('success', 'Upscaled ×2 with detail sharpening.');
     } catch (err: any) {
@@ -225,7 +276,7 @@ const App: React.FC = () => {
 
   const handleSelectFromHistory = (img: GeneratedImage) => {
     // Restore the full recipe so the user can iterate on an old creation.
-    setCurrentImage({ ...img, url: img.sourceUrl });
+    showImage({ ...img, url: img.url || img.sourceUrl });
     setPrompt(img.originalPrompt);
     setStyleId(img.styleId ?? 'none');
     setAspectRatio(img.aspectRatio);
@@ -258,19 +309,7 @@ const App: React.FC = () => {
           </div>
         </button>
 
-        <nav className="hidden sm:flex items-center space-x-1 bg-slate-900/60 rounded-full p-1 border border-white/5">
-          {(['generate', 'gallery'] as const).map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={`text-xs font-black tracking-widest uppercase px-5 py-2 rounded-full transition-all ${
-                view === v ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {v === 'generate' ? 'Studio' : `Gallery${history.length ? ` (${history.length})` : ''}`}
-            </button>
-          ))}
-        </nav>
+        <ViewSwitcher view={view} count={history.length} onChange={setView} className="hidden sm:flex" />
 
         <div className="flex items-center space-x-2">
           <button
@@ -307,6 +346,8 @@ const App: React.FC = () => {
 
       {/* ============================== Main ============================== */}
       <main className="flex-1">
+        {/* Phone-sized screens get the switcher below the (now nav-free) header. */}
+        <ViewSwitcher view={view} count={history.length} onChange={setView} className="flex sm:hidden max-w-7xl mx-auto my-3 px-4" />
         {view === 'generate' ? (
           <div className="max-w-7xl mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8">
             <div className="lg:col-span-4 space-y-5">
@@ -380,7 +421,7 @@ const App: React.FC = () => {
               images={history}
               onSelect={handleSelectFromHistory}
               onDelete={(id) => setHistory((h) => removeFromHistory(h, id))}
-              onClearAll={() => setHistory([])}
+              onClearAll={() => setHistory(clearHistory())}
             />
           </div>
         )}

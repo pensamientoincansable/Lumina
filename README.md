@@ -48,21 +48,42 @@ Other free/freemium image APIs worth knowing (not wired into this app): Hugging 
 
 ```
 App.tsx                       # Orchestrates studio, gallery, toasts, modals
-index.tsx / index.html        # Entry point (Vite) + Tailwind 4 stylesheet
+index.tsx / index.html        # Entry point (Vite) + Tailwind 4 stylesheet + boot guard
 styles.css                    # Tailwind 4 import + custom animation utilities
 types.ts                      # Types + curated style/ratio presets
+utils.ts                      # Secure-context-safe ids, blob-URL housekeeping
 components/
   GeneratePanel.tsx           # Engine, prompt, styles, formats, seed controls
   StageView.tsx               # Image stage, progress overlay, export bar, lightbox
-  HistoryView.tsx             # Local gallery grid
+  HistoryView.tsx             # Local gallery grid (with per-tile image fallbacks)
   SettingsModal.tsx           # Free API key management (links to get them)
   AuthModal.tsx               # Optional local profile (no server)
   Toasts.tsx                  # Notification system
+  ErrorBoundary.tsx           # Renders a recovery screen instead of a blank page
 services/
   pollinationsService.ts      # Free FLUX/Turbo engine (retry + rate-limit handling)
   geminiService.ts            # Optional Gemini engine (image, enhance, img2img upscale)
   enhanceService.ts           # Prompt-enhance cascade with offline fallback
   imageTools.ts               # PNG/JPG/WebP export + local ×2 sharpen upscale
-  historyStore.ts             # Quota-safe localStorage gallery
+  historyStore.ts             # Quota-safe localStorage gallery (schema repair + clear)
   keyStore.ts                 # API key storage (localStorage / .env.local)
 ```
+
+## 🩺 If the page looks blank
+
+The app is built so a failure is never silent — you should get a message, not a white screen.
+If you see one of those messages, here is what it means:
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| “Still loading…” panel after ~15 s | The module graph never finished booting (stale Vite cache behind a dev proxy) | `rm -rf node_modules/.vite && npm run dev` |
+| “Could not load the app bundle” | The JS entry 404’d (wrong `base`, blocked asset) | `npm run build` and serve `dist/`; relative `base: './'` already covers sub-paths |
+| “Lumina hit an error” card | An exception escaped a render/effect | Reload, or “Clear local data & reload” if a corrupted gallery entry poisoned storage |
+| Only a dark background, no message | CSS/JS blocked by an extension | Disable the blocker for this origin, then reload |
+| Gallery tiles say “Unavailable offline” | Saved images come from `image.pollinations.ai`, unreachable here | Generate again once the network is available — prompts/seeds are restored from the tile |
+
+Notes for hosts where external requests are blocked (sandboxes, corporate networks, some
+countries): Google Fonts is loaded **non-render-blocking**, so it can never delay the first
+paint, and every remote failure (image host, text host) degrades to a clear toast plus an
+offline fallback. The only thing you genuinely need reachable is `image.pollinations.ai`
+(and `generativelanguage.googleapis.com` if you use the Gemini engine).
