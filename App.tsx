@@ -1,146 +1,236 @@
-
-import React, { useState, useEffect, useCallback } from 'react';
-import { User, GeneratedImage, AspectRatio, ImageFormat } from './types';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  AspectRatio, Engine, GeneratedImage, ImageFormat, PollinationsModel,
+  ToastMessage, User, getRatio, getStyle,
+} from './types';
 import * as gemini from './services/geminiService';
-import AuthModal from './components/AuthModal';
+import { generateWithPollinations } from './services/pollinationsService';
+import { enhancePrompt as enhancePromptCascade } from './services/enhanceService';
+import { exportImage, localUpscale } from './services/imageTools';
+import { hasGeminiKey } from './services/keyStore';
+import { addToHistory, loadHistory, removeFromHistory } from './services/historyStore';
+import GeneratePanel from './components/GeneratePanel';
+import StageView from './components/StageView';
 import HistoryView from './components/HistoryView';
+import AuthModal from './components/AuthModal';
+import SettingsModal from './components/SettingsModal';
+import Toasts from './components/Toasts';
 
-const STYLES = [
-  'None', 'Cinematic', 'Realistic Photography', 'Anime Style', 
-  'Cyberpunk', 'Oil Painting', 'Digital Art', '3D Render', 
-  'Steampunk', 'Sketch', 'Vaporwave', 'Pixel Art'
+const PROMPT_IDEAS = [
+  'A lighthouse on a cliff at sunset, giant waves crashing',
+  'A cozy ramen shop on a rainy night, steam and lanterns',
+  'An astronaut discovering a glowing jungle on an alien planet',
+  'A tiny dragon sleeping on a pile of gold coins',
 ];
 
-const App: React.FC = () => {
-  const [user, setUser] = useState<User | null>(null);
-  const [showAuth, setShowAuth] = useState(false);
-  const [view, setView] = useState<'generate' | 'gallery'>('generate');
-  
-  const [prompt, setPrompt] = useState('');
-  const [selectedStyle, setSelectedStyle] = useState('None');
-  const [isEnhancing, setIsEnhancing] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isUpscaling, setIsUpscaling] = useState(false);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>('1:1');
-  const [currentImage, setCurrentImage] = useState<GeneratedImage | null>(null);
-  const [animationUrl, setAnimationUrl] = useState<string | null>(null);
-  const [history, setHistory] = useState<GeneratedImage[]>([]);
+let toastSeq = 1;
 
+const App: React.FC = () => {
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+      const raw = localStorage.getItem('lumina_user');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [showAuth, setShowAuth] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [view, setView] = useState<'generate' | 'gallery'>('generate');
+
+  const [prompt, setPrompt] = useState('');
+  const [styleId, setStyleId] = useState('none');
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>('1:1');
+  const [engine, setEngine] = useState<Engine>('auto');
+  const [pollinationsModel, setPollinationsModel] = useState<PollinationsModel>('flux');
+  const [seed, setSeed] = useState('');
+
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isEnhancing, setIsEnhancing] = useState(false);
+  const [isUpscaling, setIsUpscaling] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
+
+  const [currentImage, setCurrentImage] = useState<GeneratedImage | null>(null);
+  const [history, setHistory] = useState<GeneratedImage[]>(() => loadHistory());
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [keysVersion, setKeysVersion] = useState(0);
+  const toastTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Re-render when API keys change elsewhere (settings modal saves and closes fast).
   useEffect(() => {
-    const savedUser = localStorage.getItem('lumina_user');
-    if (savedUser) setUser(JSON.parse(savedUser));
-    
-    const savedHistory = localStorage.getItem('lumina_history');
-    if (savedHistory) setHistory(JSON.parse(savedHistory));
+    const bump = () => setKeysVersion((v) => v + 1);
+    window.addEventListener('lumina:keys-changed', bump);
+    return () => window.removeEventListener('lumina:keys-changed', bump);
   }, []);
 
-  const saveToHistory = useCallback((img: GeneratedImage) => {
-    const updated = [img, ...history];
-    setHistory(updated);
-    localStorage.setItem('lumina_history', JSON.stringify(updated));
-  }, [history]);
+  const dismissToast = useCallback((id: number) => {
+    setToasts((t) => t.filter((x) => x.id !== id));
+    const timer = toastTimers.current.get(id);
+    if (timer) clearTimeout(timer);
+    toastTimers.current.delete(id);
+  }, []);
 
-  const deleteFromHistory = (id: string) => {
-    const updated = history.filter(img => img.id !== id);
-    setHistory(updated);
-    localStorage.setItem('lumina_history', JSON.stringify(updated));
+  const pushToast = useCallback((kind: ToastMessage['kind'], text: string, sticky = false) => {
+    const id = toastSeq++;
+    setToasts((t) => [...t.slice(-3), { id, kind, text }]);
+    if (!sticky) {
+      const timer = setTimeout(() => dismissToast(id), kind === 'error' ? 8000 : 4500);
+      toastTimers.current.set(id, timer);
+    }
+  }, [dismissToast]);
+
+  const saveImage = useCallback((img: GeneratedImage) => {
+    setHistory((h) => addToHistory(h, img));
+  }, []);
+
+  const effectiveSeed = (variation: boolean): number => {
+    const manual = parseInt(seed, 10);
+    if (!Number.isNaN(manual)) return variation ? (manual + 1) % 1_000_000_000 : manual;
+    return Math.floor(Math.random() * 1_000_000_000);
   };
 
-  const handleEnhancePrompt = async () => {
-    if (!prompt) return;
+  const handleGenerate = async (variation = false) => {
+    const cleanPrompt = prompt.trim();
+    if (!cleanPrompt || isGenerating) return;
+
+    const style = getStyle(styleId);
+    const finalPrompt = cleanPrompt + style.suffix;
+    const finalSeed = effectiveSeed(variation);
+    const ratio = getRatio(aspectRatio);
+    const geminiReady = hasGeminiKey();
+
+    // Resolve the engine.
+    let useGemini = false;
+    if (engine === 'gemini') {
+      if (!geminiReady) {
+        pushToast('error', 'Gemini needs a free API key — open “API Keys” to add one, or switch to the Free engine.');
+        setShowSettings(true);
+        return;
+      }
+      useGemini = true;
+    } else if (engine === 'auto') {
+      useGemini = geminiReady;
+    }
+
+    setIsGenerating(true);
+    setStatusMessage('');
+
+    const base: Omit<GeneratedImage, 'id' | 'url' | 'sourceUrl' | 'engine' | 'timestamp'> = {
+      prompt: finalPrompt,
+      originalPrompt: cleanPrompt,
+      styleId,
+      seed: finalSeed,
+      aspectRatio,
+      model: undefined,
+    };
+
+    try {
+      let img: GeneratedImage;
+
+      if (useGemini) {
+        setStatusMessage('Contacting Gemini image model…');
+        try {
+          const dataUrl = await gemini.generateWithGemini(finalPrompt, aspectRatio);
+          img = { ...base, id: crypto.randomUUID(), url: dataUrl, sourceUrl: dataUrl, engine: 'gemini', timestamp: Date.now() };
+        } catch (err: any) {
+          // Auto mode: fall back to the free engine if Gemini quota/billing fails.
+          if (engine === 'auto') {
+            pushToast('wait', `${err.message} Falling back to the free engine…`);
+          } else {
+            throw err;
+          }
+          const result = await generateWithPollinations(
+            { prompt: finalPrompt, width: ratio.width, height: ratio.height, seed: finalSeed, model: pollinationsModel },
+            setStatusMessage,
+          );
+          img = { ...base, id: crypto.randomUUID(), url: result.displayUrl, sourceUrl: result.sourceUrl, engine: 'pollinations', model: pollinationsModel, timestamp: Date.now() };
+        }
+      } else {
+        setStatusMessage('Contacting the free FLUX engine…');
+        const result = await generateWithPollinations(
+          { prompt: finalPrompt, width: ratio.width, height: ratio.height, seed: finalSeed, model: pollinationsModel },
+          setStatusMessage,
+        );
+        img = { ...base, id: crypto.randomUUID(), url: result.displayUrl, sourceUrl: result.sourceUrl, engine: 'pollinations', model: pollinationsModel, timestamp: Date.now() };
+      }
+
+      setCurrentImage(img);
+      saveImage(img);
+      pushToast('success', 'Image generated and saved to your gallery.');
+    } catch (err: any) {
+      console.error(err);
+      pushToast('error', err?.message ?? 'Generation failed. Please try again.');
+    } finally {
+      setIsGenerating(false);
+      setStatusMessage('');
+    }
+  };
+
+  const handleEnhance = async () => {
+    const cleanPrompt = prompt.trim();
+    if (!cleanPrompt || isEnhancing) return;
     setIsEnhancing(true);
     try {
-      const enhanced = await gemini.enhancePrompt(prompt);
-      setPrompt(enhanced);
-    } catch (error) {
-      console.error(error);
+      const { text, source } = await enhancePromptCascade(cleanPrompt, styleId);
+      setPrompt(text);
+      if (source === 'gemini') pushToast('success', 'Prompt enhanced with Gemini.');
+      else if (source === 'pollinations') pushToast('success', 'Prompt enhanced with the free text model.');
+      else pushToast('info', 'Prompt enhanced locally (offline booster).');
+    } catch (err: any) {
+      pushToast('error', err?.message ?? 'Could not enhance the prompt.');
     } finally {
       setIsEnhancing(false);
     }
   };
 
-  const handleGenerate = async () => {
-    if (!prompt) return;
-    setIsGenerating(true);
-    setAnimationUrl(null);
-    try {
-      const url = await gemini.generateImage(prompt, selectedStyle, aspectRatio);
-      const newImg: GeneratedImage = {
-        id: Math.random().toString(36).substr(2, 9),
-        url,
-        prompt: selectedStyle !== 'None' ? `${prompt} (${selectedStyle})` : prompt,
-        originalPrompt: prompt,
-        timestamp: Date.now(),
-        aspectRatio,
-        format: 'image/png'
-      };
-      setCurrentImage(newImg);
-    } catch (error) {
-      console.error(error);
-      alert('Generation failed. Please try again.');
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleAnimate = async () => {
-    if (!currentImage) return;
-
-    // Check for API key (Veo requirement)
-    if (typeof window !== 'undefined' && (window as any).aistudio) {
-      const hasKey = await (window as any).aistudio.hasSelectedApiKey();
-      if (!hasKey) {
-        alert("This feature requires a selected API key for high-quality video generation.");
-        await (window as any).aistudio.openSelectKey();
-        // Proceeding anyway as per instructions (assume success)
-      }
-    }
-
-    setIsAnimating(true);
-    try {
-      const videoUrl = await gemini.generateMotion(currentImage.url, currentImage.prompt, aspectRatio);
-      setAnimationUrl(videoUrl);
-    } catch (error) {
-      console.error(error);
-      alert('Animation failed. Please try a different image.');
-    } finally {
-      setIsAnimating(false);
-    }
-  };
-
   const handleUpscale = async () => {
-    if (!currentImage) return;
+    if (!currentImage || isUpscaling) return;
     setIsUpscaling(true);
     try {
-      const enhancedUrl = await gemini.upscaleImage(currentImage.url);
-      setCurrentImage({ ...currentImage, url: enhancedUrl });
-    } catch (error) {
-      console.error(error);
+      let newUrl: string;
+      if (hasGeminiKey() && currentImage.engine === 'gemini') {
+        setStatusMessage('AI-enhancing with Gemini…');
+        try {
+          newUrl = await gemini.upscaleWithGemini(currentImage.url);
+        } catch (err: any) {
+          pushToast('wait', `${err.message} Using the local enhancer instead…`);
+          newUrl = await localUpscale(currentImage.url, setStatusMessage);
+        }
+      } else {
+        newUrl = await localUpscale(currentImage.url, setStatusMessage);
+      }
+      const updated = { ...currentImage, url: newUrl, sourceUrl: newUrl };
+      setCurrentImage(updated);
+      saveImage(updated);
+      pushToast('success', 'Upscaled ×2 with detail sharpening.');
+    } catch (err: any) {
+      console.error(err);
+      pushToast('error', err?.message ?? 'Upscale failed.');
     } finally {
       setIsUpscaling(false);
+      setStatusMessage('');
     }
   };
 
-  const handleDownload = async (format: ImageFormat) => {
+  const handleExport = async (format: ImageFormat) => {
     if (!currentImage) return;
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.src = currentImage.url;
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.drawImage(img, 0, 0);
-      const dataUrl = canvas.toDataURL(format);
-      const link = document.createElement('a');
-      const ext = format.split('/')[1];
-      link.download = `lumina_${currentImage.id}.${ext}`;
-      link.href = dataUrl;
-      link.click();
-    };
+    try {
+      await exportImage(currentImage.url, format, `lumina_${currentImage.id.slice(0, 8)}`);
+      pushToast('success', `Exported as ${format === 'jpeg' ? 'JPG' : format.toUpperCase()}.`);
+    } catch (err: any) {
+      console.error(err);
+      pushToast('error', err?.message ?? 'Export failed.');
+    }
+  };
+
+  const handleSelectFromHistory = (img: GeneratedImage) => {
+    // Restore the full recipe so the user can iterate on an old creation.
+    setCurrentImage({ ...img, url: img.sourceUrl });
+    setPrompt(img.originalPrompt);
+    setStyleId(img.styleId ?? 'none');
+    setAspectRatio(img.aspectRatio);
+    if (img.seed !== undefined) setSeed(String(img.seed));
+    setView('generate');
   };
 
   const handleLogout = () => {
@@ -149,163 +239,164 @@ const App: React.FC = () => {
     setView('generate');
   };
 
+  const isSaved = !!currentImage && history.some((e) => e.id === currentImage.id);
+  // keysVersion bumping re-renders the tree, so this re-reads localStorage in time.
+  void keysVersion;
+  const geminiReadyNow = hasGeminiKey();
+
   return (
     <div className="min-h-screen flex flex-col bg-[#0b0f1a]">
-      <header className="sticky top-0 z-40 glass-panel border-b border-white/5 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <div className="w-10 h-10 bg-gradient-to-tr from-indigo-600 to-purple-400 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <span className="text-white font-black text-xl">L</span>
+      {/* ============================== Header ============================== */}
+      <header className="sticky top-0 z-40 glass-panel border-b border-white/5 px-4 md:px-6 py-3.5 flex items-center justify-between gap-3">
+        <button onClick={() => setView('generate')} className="flex items-center space-x-2.5 group">
+          <div className="w-9 h-9 bg-gradient-to-tr from-indigo-600 to-fuchsia-400 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/25 group-hover:scale-105 transition-transform">
+            <span className="text-white font-black text-lg">L</span>
           </div>
-          <span className="text-2xl font-black tracking-tighter bg-gradient-to-r from-white to-slate-500 bg-clip-text text-transparent">LUMINA AI</span>
-        </div>
+          <div className="text-left leading-none">
+            <span className="text-xl font-black tracking-tighter bg-gradient-to-r from-white to-slate-500 bg-clip-text text-transparent">LUMINA</span>
+            <span className="block text-[8px] font-bold tracking-[0.3em] text-indigo-400 uppercase mt-0.5">Free AI Studio</span>
+          </div>
+        </button>
 
-        <nav className="hidden md:flex items-center space-x-8">
-          <button onClick={() => setView('generate')} className={`text-sm font-bold tracking-widest uppercase transition-all ${view === 'generate' ? 'text-indigo-400 border-b-2 border-indigo-400 pb-1' : 'text-slate-500 hover:text-white'}`}>Studio</button>
-          <button onClick={() => setView('gallery')} className={`text-sm font-bold tracking-widest uppercase transition-all ${view === 'gallery' ? 'text-indigo-400 border-b-2 border-indigo-400 pb-1' : 'text-slate-500 hover:text-white'}`}>Gallery</button>
+        <nav className="hidden sm:flex items-center space-x-1 bg-slate-900/60 rounded-full p-1 border border-white/5">
+          {(['generate', 'gallery'] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`text-xs font-black tracking-widest uppercase px-5 py-2 rounded-full transition-all ${
+                view === v ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {v === 'generate' ? 'Studio' : `Gallery${history.length ? ` (${history.length})` : ''}`}
+            </button>
+          ))}
         </nav>
 
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setShowSettings(true)}
+            title="API keys & engine settings"
+            className="p-2.5 hover:bg-white/5 rounded-xl transition-colors text-slate-400 hover:text-white border border-transparent hover:border-white/10"
+          >
+            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+            </svg>
+          </button>
           {user ? (
-            <div className="flex items-center space-x-4">
-              <span className="text-sm font-medium text-slate-300">@{user.username}</span>
-              <button onClick={handleLogout} className="p-2 hover:bg-white/5 rounded-full transition-colors text-slate-400 hover:text-red-400">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-white font-black text-sm shadow-lg shadow-emerald-900/40">
+                {user.username.charAt(0).toUpperCase()}
+              </div>
+              <span className="hidden md:block text-sm font-semibold text-slate-300 max-w-[110px] truncate">@{user.username}</span>
+              <button onClick={handleLogout} title="Remove local profile" className="p-2 hover:bg-white/5 rounded-xl transition-colors text-slate-500 hover:text-red-400">
+                <svg className="h-[18px] w-[18px]" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clipRule="evenodd" />
                 </svg>
               </button>
             </div>
           ) : (
-            <button onClick={() => setShowAuth(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black tracking-widest uppercase px-6 py-2.5 rounded-full transition-all shadow-xl shadow-indigo-600/30">Sign In</button>
+            <button
+              onClick={() => setShowAuth(true)}
+              className="bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs font-black tracking-widest uppercase px-5 py-2.5 rounded-full transition-all"
+            >
+              Profile
+            </button>
           )}
         </div>
       </header>
 
-      <main className="flex-1 overflow-auto">
+      {/* ============================== Main ============================== */}
+      <main className="flex-1">
         {view === 'generate' ? (
-          <div className="max-w-7xl mx-auto p-4 md:p-10 grid grid-cols-1 lg:grid-cols-12 gap-10">
-            <div className="lg:col-span-4 space-y-8">
-              <div className="glass-panel p-8 rounded-3xl space-y-6">
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Core Prompt</label>
-                    <button onClick={handleEnhancePrompt} disabled={isEnhancing || !prompt} className="text-xs font-bold text-emerald-400 hover:text-emerald-300 disabled:opacity-30 flex items-center gap-1">
-                      <svg xmlns="http://www.w3.org/2000/svg" className={`h-3 w-3 ${isEnhancing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                      ENHANCE
-                    </button>
-                  </div>
-                  <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Describe anything you can imagine..." className="w-full h-32 bg-slate-900/80 border border-white/5 rounded-2xl p-5 text-white text-sm placeholder-slate-600 focus:ring-2 focus:ring-indigo-500 outline-none resize-none transition-all shadow-inner" />
-                </div>
+          <div className="max-w-7xl mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8">
+            <div className="lg:col-span-4 space-y-5">
+              <GeneratePanel
+                prompt={prompt}
+                setPrompt={setPrompt}
+                engine={engine}
+                setEngine={setEngine}
+                pollinationsModel={pollinationsModel}
+                setPollinationsModel={setPollinationsModel}
+                styleId={styleId}
+                setStyleId={setStyleId}
+                aspectRatio={aspectRatio}
+                setAspectRatio={setAspectRatio}
+                seed={seed}
+                setSeed={setSeed}
+                isGenerating={isGenerating}
+                isEnhancing={isEnhancing}
+                geminiReady={geminiReadyNow}
+                onGenerate={() => handleGenerate(false)}
+                onEnhance={handleEnhance}
+                onOpenSettings={() => setShowSettings(true)}
+              />
 
-                <div className="space-y-4">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Art Style</label>
-                  <select value={selectedStyle} onChange={(e) => setSelectedStyle(e.target.value)} className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-sm text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500">
-                    {STYLES.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-
-                <div className="space-y-4">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Aspect Ratio</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['1:1', '16:9', '9:16'] as AspectRatio[]).map((ratio) => (
-                      <button key={ratio} onClick={() => setAspectRatio(ratio)} className={`py-2 rounded-xl text-xs font-bold border transition-all ${aspectRatio === ratio ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-600/20' : 'bg-slate-900 border-white/5 text-slate-500 hover:text-slate-300'}`}>
-                        {ratio}
+              {!prompt && (
+                <div className="glass-panel rounded-2xl p-5 space-y-3 animate-fade-in">
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Need inspiration?</p>
+                  <div className="flex flex-wrap gap-2">
+                    {PROMPT_IDEAS.map((idea) => (
+                      <button
+                        key={idea}
+                        onClick={() => setPrompt(idea)}
+                        className="text-[11px] text-slate-300 bg-slate-900/70 hover:bg-indigo-600/25 border border-white/5 hover:border-indigo-500/40 rounded-full px-3 py-1.5 transition-all text-left"
+                      >
+                        {idea.length > 42 ? idea.slice(0, 42) + '…' : idea}
                       </button>
                     ))}
-                  </div>
-                </div>
-
-                <button onClick={handleGenerate} disabled={isGenerating || !prompt} className={`w-full py-5 rounded-2xl font-black text-sm tracking-widest uppercase transition-all shadow-2xl ${isGenerating ? 'bg-slate-800 text-slate-500 cursor-wait' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:scale-[1.02] text-white hover:shadow-indigo-500/40'}`}>
-                  {isGenerating ? 'Synthesizing...' : 'Generate Image'}
-                </button>
-              </div>
-
-              {currentImage && (
-                <div className="glass-panel p-8 rounded-3xl space-y-6 animate-in slide-in-from-bottom-8 duration-700">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest block">Lab Tools</label>
-                  <div className="grid grid-cols-1 gap-3">
-                    <button onClick={handleAnimate} disabled={isAnimating} className="flex items-center justify-center gap-3 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-emerald-900/20">
-                      <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 ${isAnimating ? 'animate-bounce' : ''}`} viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                      </svg>
-                      {isAnimating ? 'Animating...' : 'Generate Motion (GIF)'}
-                    </button>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button onClick={handleUpscale} disabled={isUpscaling} className="bg-slate-800 text-white py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border border-white/5 hover:bg-slate-700 transition-colors">
-                        {isUpscaling ? 'Upscaling...' : 'AI Upscale'}
-                      </button>
-                      <button onClick={() => { if(!user) { setShowAuth(true); return; } saveToHistory(currentImage); alert('Saved!'); }} className="bg-slate-800 text-indigo-400 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border border-indigo-500/20 hover:bg-indigo-500/10 transition-colors">Save to Profile</button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] text-center block">Export Format</label>
-                    <div className="grid grid-cols-4 gap-2">
-                      {Object.entries(ImageFormat).map(([key, value]) => (
-                        <button key={key} onClick={() => handleDownload(value)} className="bg-slate-900 border border-white/5 hover:border-indigo-500/50 text-[10px] font-bold py-2.5 rounded-lg transition-all text-slate-400 hover:text-white">
-                          {key}
-                        </button>
-                      ))}
-                    </div>
                   </div>
                 </div>
               )}
             </div>
 
             <div className="lg:col-span-8">
-              <div className="glass-panel rounded-[40px] aspect-[1.2] w-full relative overflow-hidden flex items-center justify-center border-white/5 shadow-2xl">
-                {animationUrl ? (
-                  <video src={animationUrl} autoPlay loop muted className="w-full h-full object-contain animate-in fade-in duration-1000" />
-                ) : currentImage ? (
-                  <img src={currentImage.url} alt="Output" className="w-full h-full object-contain animate-in zoom-in-95 duration-1000" />
-                ) : (
-                  <div className="text-center space-y-4 p-10 opacity-20">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <p className="text-2xl font-black tracking-tighter uppercase italic">Ready for creation</p>
-                  </div>
-                )}
-
-                {(isGenerating || isAnimating) && (
-                  <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center space-y-8 z-50 backdrop-blur-2xl">
-                    <div className="relative">
-                      <div className="w-32 h-32 border-8 border-indigo-500/10 rounded-full"></div>
-                      <div className="absolute inset-0 w-32 h-32 border-t-8 border-indigo-500 rounded-full animate-spin"></div>
-                    </div>
-                    <div className="text-center space-y-2">
-                      <h3 className="text-2xl font-black text-white tracking-widest uppercase italic">{isAnimating ? 'Animating Pixels' : 'Painting Dreamscape'}</h3>
-                      <p className="text-indigo-400 text-sm font-medium animate-pulse">{isAnimating ? 'Deep Learning Motion Generation...' : 'Synthesizing textures and lighting...'}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-              
-              {animationUrl && (
-                 <div className="mt-6 flex justify-center">
-                    <a href={animationUrl} download="lumina_animation.mp4" className="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 px-8 py-3 rounded-full border border-indigo-500/30 text-sm font-black uppercase tracking-widest transition-all">
-                      Download Motion (MP4/GIF)
-                    </a>
-                 </div>
-              )}
+              <StageView
+                image={currentImage}
+                isGenerating={isGenerating}
+                isUpscaling={isUpscaling}
+                statusMessage={statusMessage}
+                onExport={handleExport}
+                onUpscale={handleUpscale}
+                onVariation={() => handleGenerate(true)}
+                onSave={() => currentImage && saveImage(currentImage)}
+                isSaved={isSaved}
+              />
             </div>
           </div>
         ) : (
-          <div className="max-w-7xl mx-auto p-10">
-            <div className="flex items-end justify-between mb-12">
+          <div className="max-w-7xl mx-auto p-4 md:p-10">
+            <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
               <div>
-                <h2 className="text-5xl font-black tracking-tighter text-white italic">MY ARCHIVE</h2>
-                <p className="text-slate-500 font-medium mt-2">Personal collection of generated visions.</p>
+                <h2 className="text-4xl md:text-5xl font-black tracking-tighter text-white italic">MY GALLERY</h2>
+                <p className="text-slate-500 font-medium mt-2 text-sm">
+                  Your creations are stored privately in this browser. Click any image to reopen its full recipe in the studio.
+                </p>
               </div>
-              <button onClick={() => setView('generate')} className="bg-white text-black px-8 py-3 rounded-full font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all">Back to Studio</button>
+              <button onClick={() => setView('generate')} className="bg-white text-black px-7 py-3 rounded-full font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all shadow-xl">
+                ← Back to Studio
+              </button>
             </div>
-            <HistoryView images={history} onSelect={(img) => { setCurrentImage(img); setAnimationUrl(null); setView('generate'); }} onDelete={deleteFromHistory} />
+            <HistoryView
+              images={history}
+              onSelect={handleSelectFromHistory}
+              onDelete={(id) => setHistory((h) => removeFromHistory(h, id))}
+              onClearAll={() => setHistory([])}
+            />
           </div>
         )}
       </main>
 
+      {/* ============================== Footer ============================== */}
+      <footer className="border-t border-white/5 px-6 py-4 text-center">
+        <p className="text-[11px] text-slate-600">
+          Free generation powered by <span className="text-slate-400 font-semibold">Pollinations · FLUX</span>
+          {hasGeminiKey() ? ' + Gemini (your key)' : ''} — no subscription, no watermarks on exports, images processed in your browser.
+        </p>
+      </footer>
+
       {showAuth && <AuthModal onLogin={(u) => { setUser(u); setShowAuth(false); }} onClose={() => setShowAuth(false)} />}
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onSaved={() => setKeysVersion((v) => v + 1)} />}
+      <Toasts toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 };

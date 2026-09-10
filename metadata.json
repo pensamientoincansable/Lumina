@@ -1,7 +1,4 @@
 {
-  "name": "LuminaAI - Creative Studio",
-  "description": "A high-performance AI image generation suite featuring prompt enhancement, multi-format export, and high-resolution upscaling.",
-  "requestFramePermissions": [
-    "camera"
-  ]
+  "name": "Lumina AI · Free Creative Studio",
+  "description": "Free AI image generation suite (FLUX via Pollinations, optional Gemini engine) with prompt enhancement, 19 curated styles, 5 formats, seed control, local ×2 upscale and PNG/JPG/WebP export. No subscription required."
 }
