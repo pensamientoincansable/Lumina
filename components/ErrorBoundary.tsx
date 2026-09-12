@@ -44,20 +44,20 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
     if (!error) return this.props.children;
 
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0b0f1a] p-6">
-        <div className="glass-panel max-w-2xl w-full rounded-3xl p-8 space-y-5">
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <div className="holo-panel hud-corners max-w-2xl w-full rounded-3xl p-8 space-y-5">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 shrink-0 rounded-2xl bg-gradient-to-tr from-indigo-600 to-fuchsia-400 flex items-center justify-center text-white font-black text-xl">L</div>
+            <div className="w-11 h-11 shrink-0 rounded-2xl bg-gradient-to-tr from-cyan-600 via-indigo-600 to-fuchsia-500 border border-cyan-300/40 flex items-center justify-center text-white font-black text-xl font-display">L</div>
             <div>
-              <h1 className="text-2xl font-black tracking-tight text-white">Lumina hit an error</h1>
-              <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-400 mt-0.5">The studio stopped instead of going blank</p>
+              <h1 className="font-display text-2xl font-bold tracking-[0.06em] holo-text">Lumina hit an error</h1>
+              <p className="font-hud text-[10.5px] font-bold uppercase tracking-[0.24em] text-cyan-400/80 mt-1">The studio stopped instead of going blank</p>
             </div>
           </div>
 
           <p className="text-sm text-slate-300 leading-relaxed">{error.message || 'Unknown error.'}</p>
 
           {error.stack && (
-            <pre className="text-[11px] leading-relaxed text-slate-400 bg-slate-950/70 border border-white/10 rounded-2xl p-4 max-h-64 overflow-auto whitespace-pre-wrap break-words">
+            <pre className="text-[11px] leading-relaxed text-slate-400 bg-[#02060d]/80 border border-cyan-500/15 rounded-2xl p-4 max-h-64 overflow-auto whitespace-pre-wrap break-words">
               {error.stack}
             </pre>
           )}
@@ -65,13 +65,13 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
           <div className="flex flex-wrap gap-3 pt-1">
             <button
               onClick={() => location.reload()}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black uppercase tracking-widest px-5 py-3 rounded-xl transition-colors"
+              className="holo-btn text-white font-hud text-[11px] font-bold uppercase tracking-[0.2em] px-5 py-3 rounded-xl"
             >
               Reload studio
             </button>
             <button
               onClick={this.clearLocalData}
-              className="bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-xs font-black uppercase tracking-widest px-5 py-3 rounded-xl transition-colors"
+              className="holo-chip text-slate-200 font-hud text-[11px] font-bold uppercase tracking-[0.2em] px-5 py-3 rounded-xl"
             >
               Clear local data &amp; reload
             </button>

@@ -4,26 +4,30 @@
   <!--
     On GitHub Pages the source .tsx files cannot execute in the browser.
     Redirect visitors to the pre-compiled build in docs/ so the site works
-    without a custom Actions workflow. This script is harmless in local dev
-    (localhost does not match *.github.io) and fires before anything else.
+    without a custom Actions workflow. Harmless in local dev (localhost does
+    not match *.github.io). The /docs path guard makes a straight copy of this
+    file into docs/ safe (no redirect loop on the deployed page itself).
   -->
-  <script>if(location.hostname.endsWith('.github.io')){location.replace('./docs/');}</script>
+  <script>if(location.hostname.endsWith('.github.io')&&location.pathname.indexOf('/docs')===-1){location.replace('./docs/');}</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Lumina AI — Free AI image generation studio. Multiple artistic styles, aspect ratios and export formats. No subscription required." />
-  <meta name="theme-color" content="#0b0f1a" />
-  <title>Lumina AI · Free Creative Studio</title>
+  <meta name="description" content="Lumina AI — Free AI image generation studio. Holographic sci-fi interface, multiple artistic styles, aspect ratios and export formats. No subscription required." />
+  <meta name="theme-color" content="#04070f" />
+  <title>Lumina AI · Holographic Creative Studio</title>
 
   <style>
     /* Inlined so the very first paint is already dark and centred: avoids the
        white flash and keeps the loading state readable even if styles.css or the
        font CDN never arrive. */
-    html { background-color: #0b0f1a; color-scheme: dark; }
+    html { background-color: #04070f; color-scheme: dark; }
     body {
       margin: 0;
       min-height: 100vh;
-      background-color: #0b0f1a;
-      color: #f8fafc;
+      background:
+        radial-gradient(ellipse 120% 70% at 50% -10%, rgba(34, 211, 238, 0.07), transparent 55%),
+        radial-gradient(ellipse 90% 60% at 85% 110%, rgba(168, 85, 247, 0.08), transparent 55%),
+        linear-gradient(180deg, #020409 0%, #04070f 45%, #050914 100%);
+      color: #eaf6ff;
       font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       -webkit-font-smoothing: antialiased;
     }
@@ -34,7 +38,7 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 18px;
+      gap: 20px;
       text-align: center;
       padding: 24px;
       z-index: 5;
@@ -42,22 +46,31 @@
     /* Hidden as soon as React has mounted anything into #root. */
     #root:not(:empty) ~ #boot { display: none !important; }
     #boot .boot-mark {
-      width: 56px; height: 56px; border-radius: 16px;
-      background: linear-gradient(135deg, #4f46e5, #c084fc);
+      width: 62px; height: 62px; border-radius: 18px;
+      background: linear-gradient(135deg, #0e7490, #0891b2 45%, #6366f1 80%, #a855f7);
+      border: 1px solid rgba(165, 243, 252, 0.55);
       display: flex; align-items: center; justify-content: center;
-      color: #fff; font-size: 28px; font-weight: 900;
-      animation: boot-pulse 1.4s ease-in-out infinite;
+      color: #f0fdff; font-size: 30px; font-weight: 900;
+      box-shadow: 0 0 34px -6px rgba(34, 211, 238, 0.7), inset 0 1px 0 rgba(255,255,255,.35);
+      animation: boot-pulse 1.6s ease-in-out infinite;
     }
-    #boot .boot-label { font-size: 12px; letter-spacing: .28em; text-transform: uppercase; color: #818cf8; font-weight: 700; }
+    #boot .boot-label {
+      font-size: 12px; letter-spacing: .34em; text-transform: uppercase;
+      color: #67e8f9; font-weight: 700;
+      text-shadow: 0 0 14px rgba(103, 232, 249, 0.5);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
     #boot .boot-detail { max-width: 640px; font-size: 13px; line-height: 1.6; color: #94a3b8; white-space: pre-wrap; word-break: break-word; text-align: left; }
-    #boot.is-error .boot-mark { animation: none; }
+    #boot.is-error .boot-mark { animation: none; border-color: rgba(252, 165, 165, 0.6); box-shadow: 0 0 34px -6px rgba(248, 113, 113, 0.6); }
     #boot .boot-detail code { color: #fca5a5; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     #boot button {
-      font: inherit; font-size: 12px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
-      color: #fff; background: #4f46e5; border: 0; border-radius: 999px; padding: 10px 22px; cursor: pointer;
+      font: inherit; font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+      color: #f0fdff; background: linear-gradient(120deg, #0e7490, #4f46e5);
+      border: 1px solid rgba(165, 243, 252, 0.5); border-radius: 999px; padding: 10px 24px; cursor: pointer;
+      box-shadow: 0 0 22px -8px rgba(34, 211, 238, 0.7);
     }
-    #boot button:hover { background: #4338ca; }
-    @keyframes boot-pulse { 0%, 100% { opacity: .55; transform: scale(.96); } 50% { opacity: 1; transform: scale(1); } }
+    #boot button:hover { filter: brightness(1.18); }
+    @keyframes boot-pulse { 0%, 100% { opacity: .6; transform: scale(.95); } 50% { opacity: 1; transform: scale(1); } }
     @media (prefers-reduced-motion: reduce) { #boot .boot-mark { animation: none; } }
   </style>
 
@@ -66,14 +79,14 @@
     a <link rel="stylesheet"> to a CDN that is slow, firewalled or blocked
     (offline dev boxes, sandboxes, some regions) is render-blocking and leaves the
     whole page white/blank until it times out. The app renders with the system UI
-    font stack and upgrades to Inter when the sheet loads.
+    font stack and upgrades to the holo typefaces when the sheets load.
   -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'"
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" />
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" /></noscript>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%236366f1'/%3E%3Cstop offset='1' stop-color='%23c084fc'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='24' fill='url(%23g)'/%3E%3Ctext x='50' y='72' font-size='62' font-family='Arial' font-weight='900' fill='white' text-anchor='middle'%3EL%3C/text%3E%3C/svg%3E" />
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Orbitron:wght@600;700;800;900&family=Share+Tech+Mono&display=swap" />
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Orbitron:wght@600;700;800;900&family=Share+Tech+Mono&display=swap" /></noscript>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2322d3ee'/%3E%3Cstop offset='0.6' stop-color='%236366f1'/%3E%3Cstop offset='1' stop-color='%23e879f9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='24' fill='url(%23g)'/%3E%3Ctext x='50' y='72' font-size='62' font-family='Arial' font-weight='900' fill='white' text-anchor='middle'%3EL%3C/text%3E%3C/svg%3E" />
 </head>
 <body>
   <div id="root"></div>
@@ -81,7 +94,7 @@
   <!-- Visible loading/error state — a sibling of #root so React never fights over it. -->
   <div id="boot" role="status" aria-live="polite">
     <div class="boot-mark">L</div>
-    <div class="boot-label">Loading Lumina…</div>
+    <div class="boot-label">Initializing Holo Station…</div>
     <div class="boot-detail" id="boot-detail" hidden></div>
   </div>
 
@@ -129,7 +142,7 @@
         var target = e.target;
         if (target && target !== window && target.tagName) {
           if (target.tagName === 'SCRIPT' && isEmpty()) {
-            show('Could not load the app bundle', [
+            show('App bundle failed to load', [
               (target.src || target.href || 'script element'),
               'If this is the dev server: stop it, delete node_modules/.vite, then run npm run dev again.',
             ]);

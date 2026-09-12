@@ -10,6 +10,7 @@
 
 const LS_GEMINI_KEY = 'lumina_gemini_api_key';
 const LS_POLLINATIONS_KEY = 'lumina_pollinations_key';
+const LS_GEMINI_MODEL_ORDER = 'lumina_gemini_image_model_order';
 
 /**
  * Build-time key injected by Vite's `define` (see vite.config.ts).
@@ -60,6 +61,29 @@ export function setGeminiKey(key: string): void {
 
 export function hasGeminiKey(): boolean {
   return getGeminiKey().length > 0;
+}
+
+/**
+ * Persistent order of Gemini image models (best-first, self-healing):
+ * the model that last succeeded is moved to the front, so generation skips
+ * models the user's plan does not support without re-discovering them.
+ */
+export function getGeminiImageModelOrder(): string[] {
+  try {
+    const raw = localStorage.getItem(LS_GEMINI_MODEL_ORDER) || '';
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list.filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function setGeminiImageModelOrder(order: string[]): void {
+  try {
+    localStorage.setItem(LS_GEMINI_MODEL_ORDER, JSON.stringify(order));
+  } catch {
+    /* storage full/blocked — the cascade simply re-discovers next time */
+  }
 }
 
 /** Optional free Pollinations key (publishable `pk_…`) — raises the free rate limit. */

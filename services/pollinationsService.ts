@@ -18,6 +18,8 @@ export interface PollinationsRequest {
   height: number;
   seed: number;
   model: PollinationsModel;
+  /** What to avoid — e.g. "blurry, out of focus" (kept short: URL-length bound). */
+  negativePrompt?: string;
 }
 
 export interface PollinationsResult {
@@ -58,6 +60,12 @@ export function buildPollinationsUrl(req: PollinationsRequest): string {
     nologo: 'true',
     referrer: 'lumina-creative-studio',
   });
+  if (req.negativePrompt) {
+    // Keep the URL lean — the negative prompt is a query param and very long
+    // ones risk truncation by proxies. 280 chars comfortably holds the full
+    // blur-fix pair (284 chars) with room for the rest of the URL.
+    params.set('negative_prompt', req.negativePrompt.slice(0, 300));
+  }
   const key = getPollinationsKey();
   if (key) params.set('key', key);
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(req.prompt)}?${params.toString()}`;

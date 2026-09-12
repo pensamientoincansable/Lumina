@@ -53,7 +53,7 @@ export interface ToastMessage {
 
 export const STYLE_PRESETS: StylePreset[] = [
   { id: 'none', label: 'No Style', emoji: '✨', suffix: '' },
-  { id: 'photoreal', label: 'Photorealistic', emoji: '📷', suffix: ', ultra realistic photograph, 85mm lens, shallow depth of field, natural cinematic lighting, intricate detail, 8k uhd' },
+  { id: 'photoreal', label: 'Photorealistic', emoji: '📷', suffix: ', ultra realistic photograph, 85mm lens, crisp tack-sharp focus on the subject, natural cinematic lighting, intricate fine detail, 8k uhd' },
   { id: 'cinematic', label: 'Cinematic', emoji: '🎬', suffix: ', cinematic film still, anamorphic lens flare, dramatic volumetric lighting, subtle film grain, teal and orange grade, epic composition' },
   { id: 'anime', label: 'Anime', emoji: '🌸', suffix: ', anime style, makoto shinkai inspired, cel shading, vibrant colors, clean lineart, beautifully detailed background art' },
   { id: 'digital-art', label: 'Digital Art', emoji: '🎨', suffix: ', stunning digital painting, trending on artstation, concept art, dramatic lighting, rich vibrant colors, sharp focus' },
@@ -75,12 +75,17 @@ export const STYLE_PRESETS: StylePreset[] = [
 
 export const NO_STYLE = STYLE_PRESETS[0];
 
+/**
+ * Pixel sizes for the free engine (Pollinations accepts up to 2048px per side).
+ * Bumped from the old 1024-class sizes: the extra pixels are the single most
+ * visible quality lever for faces and fine detail (same prompt, crisp output).
+ */
 export const RATIO_PRESETS: RatioPreset[] = [
-  { id: '1:1', label: 'Square', width: 1024, height: 1024 },
-  { id: '4:3', label: 'Classic', width: 1152, height: 864 },
-  { id: '3:4', label: 'Portrait', width: 864, height: 1152 },
-  { id: '16:9', label: 'Wide', width: 1280, height: 720 },
-  { id: '9:16', label: 'Tall', width: 720, height: 1280 },
+  { id: '1:1', label: 'Square', width: 1280, height: 1280 },
+  { id: '4:3', label: 'Classic', width: 1408, height: 1056 },
+  { id: '3:4', label: 'Portrait', width: 1056, height: 1408 },
+  { id: '16:9', label: 'Wide', width: 1600, height: 900 },
+  { id: '9:16', label: 'Tall', width: 900, height: 1600 },
 ];
 
 export const getStyle = (id: string): StylePreset =>
