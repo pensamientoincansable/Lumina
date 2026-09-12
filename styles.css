@@ -224,7 +224,10 @@ body {
 }
 
 /* ---- Tilt3D: per-element perspective + travelling glare (the "5D" layer) ---- */
+/* position:relative is REQUIRED: the glare is absolute inset:0 and must be
+   contained by the tilted element, not a distant positioned ancestor. */
 .tilt3d {
+  position: relative;
   transform-style: preserve-3d;
   will-change: transform;
 }
@@ -328,7 +331,10 @@ body {
   filter: blur(1px);
   z-index: 1;
   animation: float-y 7s ease-in-out infinite;
-  transform: translate3d(calc(var(--par-x, 0px) * var(--depth, 1)), calc(var(--par-y, 0px) * var(--depth, 1)), 0);
+  /* Individual `translate` property (not `transform`) so the parallax
+     composes with the float animation's own transform — on `transform`
+     the animation would override the parallax entirely. */
+  translate: calc(var(--par-x, 0px) * var(--depth, 1)) calc(var(--par-y, 0px) * var(--depth, 1));
 }
 @media (prefers-reduced-motion: reduce) {
   .holo-orb { animation: none; }

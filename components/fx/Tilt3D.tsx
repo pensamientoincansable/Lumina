@@ -43,6 +43,10 @@ const Tilt3D: React.FC<Tilt3DProps> = ({
     if (!resting) {
       s.raf = requestAnimationFrame(tick);
     } else {
+      // Reset the handle so the next pointer event can restart the loop —
+      // a consumed rAF id is still a non-zero number, so leaving it set
+      // would silently kill the tilt after the first hover cycle.
+      s.raf = 0;
       el.style.transform = '';
       s.rx = s.ry = s.trx = s.tRy = 0;
     }
