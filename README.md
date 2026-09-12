@@ -1,6 +1,6 @@
-# ✨ Lumina AI · Free Creative Studio
+# ✨ Lumina AI · Holographic Creative Studio
 
-A free AI image-generation studio. It works **out of the box with zero configuration and zero cost** thanks to the Pollinations FLUX engine — and optionally upgrades to Google's Gemini image models if you add a (free) API key.
+A free AI image-generation studio wrapped in a **holographic sci-fi interface** — starfield parallax, 3D-tilting panels, cursor spotlight and ripples for layered "5D" depth. It works **out of the box with zero configuration and zero cost** thanks to the Pollinations FLUX engine — and optionally upgrades to Google's Gemini image models if you add a (free) API key.
 
 ![stack](https://img.shields.io/badge/React%2019-Vite%206-646cff) ![styles](https://img.shields.io/badge/Tailwind%20CSS-4-38bdf8) ![cost](https://img.shields.io/badge/cost-%240-brightgreen)
 
@@ -9,6 +9,7 @@ A free AI image-generation studio. It works **out of the box with zero configura
 | Feature | Free? | How |
 | --- | --- | --- |
 | Image generation (FLUX / Turbo) | ✅ always | Pollinations — no account, no key |
+| **Sharp-face generation pipeline** | ✅ always | Higher resolutions (1280–1600px), face-aware sharpness boosters, `negative_prompt` against blur/defocus, DoF removed from the photoreal preset |
 | 19 curated art styles (photoreal, anime, cyberpunk, oil painting, pixel art…) | ✅ | Style presets engineered into the prompt |
 | 5 aspect ratios (1:1, 4:3, 3:4, 16:9, 9:16) | ✅ | Exact pixel sizes per engine |
 | Seed control (reproducible results + variations) | ✅ | Manual seed, 🎲 random, one-click variation |
@@ -16,7 +17,8 @@ A free AI image-generation studio. It works **out of the box with zero configura
 | Upscale ×2 + detail sharpening | ✅ | Local canvas pipeline (unsharp-mask), or Gemini img2img if a key is set |
 | Export PNG / JPG / WebP | ✅ | In-browser conversion, no watermark added |
 | Private local gallery (up to 30 creations, full recipe restore) | ✅ | localStorage, self-trimming |
-| Gemini engine (optional) | 🔑 free key | `gemini-2.5-flash-image`, falls back to free engine on quota errors |
+| Holographic UI ("5D" depth) | ✅ always | Canvas starfield with 3 depth bands + mouse parallax, perspective grid, cursor spotlight/ring/ripples, per-panel 3D tilt + glare — all off on touch & reduced-motion |
+| Gemini engine (optional) | 🔑 free key | Model cascade `gemini-3-pro-image (2K) → gemini-3.1-flash-image (2K) → gemini-2.5-flash-image`, per-plan auto-discovery + memory, image-only output, **one-click "Test connection"** for the API key, auto fallback to free engine on quota errors |
 
 ## Run locally
 
@@ -64,17 +66,22 @@ components/
   GeneratePanel.tsx           # Engine, prompt, styles, formats, seed controls
   StageView.tsx               # Image stage, progress overlay, export bar, lightbox
   HistoryView.tsx             # Local gallery grid (with per-tile image fallbacks)
-  SettingsModal.tsx           # Free API key management (links to get them)
+  SettingsModal.tsx           # Free API key management + Gemini "Test connection"
   AuthModal.tsx               # Optional local profile (no server)
   Toasts.tsx                  # Notification system
   ErrorBoundary.tsx           # Renders a recovery screen instead of a blank page
+  fx/
+    HoloBackground.tsx        # Canvas starfield + perspective grid, mouse parallax
+    HoloCursor.tsx            # Cursor dot/ring/ripples + travelling spotlight
+    Tilt3D.tsx                # Per-element 3D tilt + glare (the depth wrapper)
 services/
+  promptComposer.ts           # Sharp-face pipeline: boosters + negative prompts
   pollinationsService.ts      # Free FLUX/Turbo engine (retry + rate-limit handling)
-  geminiService.ts            # Optional Gemini engine (image, enhance, img2img upscale)
+  geminiService.ts            # Optional Gemini engine (model cascade, key check, img2img)
   enhanceService.ts           # Prompt-enhance cascade with offline fallback
   imageTools.ts               # PNG/JPG/WebP export + local ×2 sharpen upscale
   historyStore.ts             # Quota-safe localStorage gallery (schema repair + clear)
-  keyStore.ts                 # API key storage (localStorage / .env.local)
+  keyStore.ts                 # API key + model-order storage (localStorage / .env.local)
 ```
 
 ## 🩺 If the page looks blank
@@ -84,6 +91,8 @@ If you see one of those messages, here is what it means:
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
+| “My Gemini key didn’t work” | Invalid key, no image quota, or the model isn't on your plan | Settings → **⚡ Test connection** (validates the key on a free text model and tells you exactly what failed). Image generation then cascades `3 Pro → 3.1 Flash → 2.5 Flash` and remembers the first model your key can use. |
+| Faces look soft/blurry | Prompt-level: depth-of-field cues, low resolution, no sharpness intent | Already fixed — the prompt composer adds face-aware sharpness clauses + a `negative_prompt`, and the free engine now renders at 1280–1600px. If an old gallery image looks soft, hit **Upscale ×2** on it. |
 | “Still loading…” panel after ~15 s | The module graph never finished booting (stale Vite cache behind a dev proxy) | `rm -rf node_modules/.vite && npm run dev` |
 | “Could not load the app bundle” | The JS entry 404’d (wrong `base`, blocked asset) | `npm run build` and serve `dist/`; relative `base: './'` already covers sub-paths |
 | “Lumina hit an error” card | An exception escaped a render/effect | Reload, or “Clear local data & reload” if a corrupted gallery entry poisoned storage |

@@ -28,39 +28,39 @@ const AuthModal: React.FC<AuthModalProps> = ({ onLogin, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in" onClick={onClose}>
-      <div className="glass-panel w-full max-w-md p-8 rounded-3xl shadow-2xl relative animate-zoom-in" onClick={(e) => e.stopPropagation()}>
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors text-lg leading-none">✕</button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in" onClick={onClose}>
+      <div className="holo-panel hud-corners w-full max-w-md p-8 rounded-3xl shadow-2xl relative animate-zoom-in" onClick={(e) => e.stopPropagation()}>
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-cyan-200 transition-colors text-lg leading-none">✕</button>
 
-        <h2 className="text-3xl font-black tracking-tight mb-2 text-center bg-gradient-to-r from-indigo-400 to-fuchsia-400 bg-clip-text text-transparent">
+        <h2 className="font-display text-2xl font-bold tracking-[0.08em] mb-3 text-center holo-text">
           {isLogin ? 'Welcome Back' : 'Create Your Profile'}
         </h2>
-        <p className="text-slate-400 text-center text-sm mb-8 leading-relaxed">
-          100% local — no account server, no passwords, no emails sent.
-          Your profile lives only in this browser.
+        <p className="font-hud text-slate-400 text-center text-[11px] mb-8 leading-relaxed tracking-[0.06em]">
+          100% LOCAL — NO ACCOUNT SERVER, NO PASSWORDS, NO EMAILS SENT.
+          YOUR PROFILE LIVES ONLY IN THIS BROWSER.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">Display name</label>
+            <label className="block font-hud text-[10.5px] font-bold text-cyan-300/80 uppercase tracking-[0.2em] mb-1.5">Display name</label>
             <input
               type="text"
               required
               maxLength={24}
               placeholder="e.g. starweaver"
-              className="w-full bg-slate-900/80 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+              className="w-full bg-[#02060d] border border-cyan-500/15 rounded-xl px-4 py-2.5 text-sm focus:border-cyan-400/50 focus:ring-2 focus:ring-cyan-400/25 outline-none"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
             />
           </div>
           {!isLogin && (
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">
-                Email <span className="text-slate-600 normal-case font-medium">(optional, never sent anywhere)</span>
+              <label className="block font-hud text-[10.5px] font-bold text-cyan-300/80 uppercase tracking-[0.2em] mb-1.5">
+                Email <span className="text-slate-600 normal-case font-medium tracking-normal">(optional, never sent anywhere)</span>
               </label>
               <input
                 type="email"
-                className="w-full bg-slate-900/80 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                className="w-full bg-[#02060d] border border-cyan-500/15 rounded-xl px-4 py-2.5 text-sm focus:border-cyan-400/50 focus:ring-2 focus:ring-cyan-400/25 outline-none"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
@@ -69,7 +69,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onLogin, onClose }) => {
 
           <button
             type="submit"
-            className="w-full bg-gradient-to-r from-indigo-600 to-fuchsia-600 hover:from-indigo-500 hover:to-fuchsia-500 text-white font-black text-sm uppercase tracking-widest py-3.5 rounded-xl transition-all shadow-xl shadow-indigo-950/40"
+            className="w-full holo-btn text-white font-display font-bold text-sm uppercase tracking-[0.24em] py-3.5 rounded-2xl"
           >
             {isLogin ? 'Continue' : 'Start Creating'}
           </button>
@@ -77,7 +77,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onLogin, onClose }) => {
 
         <div className="mt-6 text-center text-sm text-slate-400">
           {isLogin ? "Don't have a profile yet?" : 'Already set up on this browser?'}{' '}
-          <button onClick={() => setIsLogin(!isLogin)} className="text-indigo-400 hover:text-indigo-300 font-bold">
+          <button onClick={() => setIsLogin(!isLogin)} className="text-cyan-300 hover:text-cyan-200 font-bold">
             {isLogin ? 'Create one' : 'Switch profile'}
           </button>
         </div>

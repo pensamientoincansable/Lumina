@@ -1,29 +1,348 @@
 @import "tailwindcss";
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   LUMINA · HOLO-SCIFI THEME
+   Deep-space base + cyan/magenta holographic accents, HUD brackets,
+   scanlines, and layered depth (starfield, grid, cursor spotlight, 3D tilt).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 :root {
   color-scheme: dark;
+
+  --holo-bg: #04070f;
+  --holo-cyan: #22d3ee;
+  --holo-cyan-bright: #a5f3fc;
+  --holo-blue: #38bdf8;
+  --holo-violet: #818cf8;
+  --holo-magenta: #e879f9;
+  --holo-border: rgba(103, 232, 249, 0.16);
+  --holo-glow: rgba(34, 211, 238, 0.35);
 }
+
+html { background-color: var(--holo-bg); }
 
 body {
   font-family: 'Inter', system-ui, sans-serif;
-  background-color: #0b0f1a;
-  color: #f8fafc;
+  background-color: var(--holo-bg);
+  background-image:
+    radial-gradient(ellipse 120% 70% at 50% -10%, rgba(34, 211, 238, 0.06), transparent 55%),
+    radial-gradient(ellipse 90% 60% at 85% 110%, rgba(168, 85, 247, 0.07), transparent 55%),
+    linear-gradient(180deg, #020409 0%, #04070f 45%, #050914 100%);
+  background-attachment: fixed;
+  color: #eaf6ff;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
-/* ---- Glassmorphism panel ---- */
+/* Type voices — loaded non-blocking in index.html, with safe fallbacks. */
+.font-display { font-family: 'Orbitron', 'Inter', ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.02em; }
+.font-hud   { font-family: 'Share Tech Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* ---- Holographic glass panel (replaces the old plain glass) ---- */
+.holo-panel {
+  position: relative;
+  background:
+    linear-gradient(160deg, rgba(12, 26, 48, 0.66) 0%, rgba(6, 12, 26, 0.55) 45%, rgba(26, 13, 46, 0.45) 100%);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  border: 1px solid var(--holo-border);
+  box-shadow:
+    inset 0 1px 0 rgba(165, 243, 252, 0.09),
+    0 24px 60px -28px rgba(0, 0, 0, 0.9);
+  transition: border-color 0.35s ease, box-shadow 0.35s ease;
+}
+.holo-panel::before {
+  /* top edge light line — the "hologram emitter" */
+  content: '';
+  position: absolute;
+  top: 0; left: 12%;
+  width: 76%; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(103, 232, 249, 0.75), rgba(232, 121, 249, 0.5), transparent);
+  pointer-events: none;
+}
+.holo-panel:hover {
+  border-color: rgba(103, 232, 249, 0.32);
+  box-shadow:
+    inset 0 1px 0 rgba(165, 243, 252, 0.12),
+    0 24px 60px -28px rgba(0, 0, 0, 0.9),
+    0 0 44px -12px var(--holo-glow);
+}
+
+/* Keep the legacy class usable with the new look. */
 .glass-panel {
-  background: rgba(30, 41, 59, 0.55);
+  background: rgba(10, 20, 38, 0.6);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(103, 232, 249, 0.1);
+}
+
+/* ---- HUD corner brackets ---- */
+.hud-corners { position: relative; }
+.hud-corners::after {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  pointer-events: none;
+  opacity: 0.5;
+  background:
+    linear-gradient(var(--holo-cyan), var(--holo-cyan)) left top / 16px 1.5px,
+    linear-gradient(var(--holo-cyan), var(--holo-cyan)) left top / 1.5px 16px,
+    linear-gradient(var(--holo-magenta), var(--holo-magenta)) right top / 16px 1.5px,
+    linear-gradient(var(--holo-magenta), var(--holo-magenta)) right top / 1.5px 16px,
+    linear-gradient(var(--holo-magenta), var(--holo-magenta)) left bottom / 16px 1.5px,
+    linear-gradient(var(--holo-magenta), var(--holo-magenta)) left bottom / 1.5px 16px,
+    linear-gradient(var(--holo-cyan), var(--holo-cyan)) right bottom / 16px 1.5px,
+    linear-gradient(var(--holo-cyan), var(--holo-cyan)) right bottom / 1.5px 16px;
+  background-repeat: no-repeat;
+  transition: opacity 0.35s ease;
+}
+.hud-corners:hover::after { opacity: 0.95; }
+
+/* ---- Holographic gradient text ---- */
+.holo-text {
+  background: linear-gradient(97deg, #e0fbff 0%, #67e8f9 34%, #ffffff 52%, #c4b5fd 74%, #e879f9 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 14px rgba(103, 232, 249, 0.35));
+}
+
+/* ---- Subtle hologram flicker (very slow, very subtle) ---- */
+@keyframes holo-flicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  93% { opacity: 0.72; }
+  94% { opacity: 1; }
+  97% { opacity: 0.88; }
+  98% { opacity: 1; }
+}
+.animate-holo-flicker { animation: holo-flicker 9s linear infinite; }
+
+/* ---- Scanlines overlay (for the stage & busy states) ---- */
+.scanlines { position: relative; }
+.scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(148, 233, 255, 0.03) 0px, rgba(148, 233, 255, 0.03) 1px, transparent 1px, transparent 3px);
+  mix-blend-mode: screen;
+  border-radius: inherit;
+}
+
+/* A bright scan line travelling down the stage (hologram refresh sweep). */
+@keyframes holo-scan {
+  0%   { top: -12%; opacity: 0; }
+  8%   { opacity: 0.6; }
+  50%  { opacity: 0.25; }
+  92%  { opacity: 0.5; }
+  100% { top: 112%; opacity: 0; }
+}
+.holo-scan-line {
+  position: absolute;
+  left: 0; right: 0;
+  height: 90px;
+  top: -12%;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(103, 232, 249, 0.05) 45%, rgba(165, 243, 252, 0.12) 50%, rgba(103, 232, 249, 0.05) 55%, transparent);
+  animation: holo-scan 8s linear infinite;
+}
+
+/* ---- Stage background: holographic grid ---- */
+@keyframes grid-drift {
+  from { background-position: 0 0, 0 0, 0 0; }
+  to   { background-position: 0 0, 44px 44px, 44px 44px; }
+}
+.stage-bg {
+  background-color: rgba(3, 7, 15, 0.55);
+  background-image:
+    radial-gradient(ellipse 90% 65% at 50% 0%, rgba(34, 211, 238, 0.09), transparent 62%),
+    linear-gradient(rgba(56, 189, 248, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.055) 1px, transparent 1px);
+  background-size: 100% 100%, 44px 44px, 44px 44px;
+  animation: grid-drift 7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage-bg { animation: none; }
+}
+
+/* ---- Primary holo button (emitter core) ---- */
+.holo-btn {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(120deg, #0e7490 0%, #0891b2 28%, #4f46e5 68%, #9333ea 100%);
+  border: 1px solid rgba(165, 243, 252, 0.55);
+  box-shadow:
+    0 0 26px -6px rgba(34, 211, 238, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.25s ease, filter 0.25s ease;
+}
+.holo-btn:not(:disabled)::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 45%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.32), transparent);
+  transform: translateX(-160%) skewX(-12deg);
+  animation: holo-shimmer-sweep 3.4s ease-in-out infinite;
+}
+.holo-btn:not(:disabled):hover {
+  transform: translateY(-1px) scale(1.012);
+  filter: brightness(1.16) saturate(1.1);
+  box-shadow:
+    0 0 44px -6px rgba(34, 211, 238, 0.8),
+    0 0 80px -20px rgba(232, 121, 249, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.holo-btn:not(:disabled):active { transform: translateY(0) scale(0.995); }
+@keyframes holo-shimmer-sweep {
+  0% { transform: translateX(-160%) skewX(-12deg); }
+  42%, 100% { transform: translateX(320%) skewX(-12deg); }
+}
+
+/* Secondary holo chip button */
+.holo-chip {
+  border: 1px solid rgba(103, 232, 249, 0.18);
+  background: rgba(7, 15, 30, 0.72);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease, color 0.25s ease, transform 0.2s ease;
+}
+.holo-chip:hover {
+  border-color: rgba(103, 232, 249, 0.55);
+  background: rgba(14, 30, 54, 0.85);
+  box-shadow: 0 0 18px -6px var(--holo-glow);
+  transform: translateY(-1px);
+}
+.holo-chip.is-active {
+  border-color: rgba(103, 232, 249, 0.75);
+  background: linear-gradient(150deg, rgba(8, 145, 178, 0.25), rgba(79, 70, 229, 0.2));
+  box-shadow: 0 0 22px -8px rgba(34, 211, 238, 0.7), inset 0 0 14px -8px rgba(103, 232, 249, 0.5);
+}
+.holo-chip.is-magenta.is-active {
+  border-color: rgba(232, 121, 249, 0.7);
+  background: linear-gradient(150deg, rgba(168, 85, 247, 0.24), rgba(88, 28, 135, 0.18));
+  box-shadow: 0 0 22px -8px rgba(232, 121, 249, 0.6), inset 0 0 14px -8px rgba(232, 121, 249, 0.45);
+}
+
+/* ---- Tilt3D: per-element perspective + travelling glare (the "5D" layer) ---- */
+.tilt3d {
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.tilt3d-glare {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  border-radius: inherit;
+  background: radial-gradient(480px circle at var(--mx, 50%) var(--my, 50%), rgba(165, 243, 252, 0.11), transparent 58%);
+  mix-blend-mode: screen;
+}
+.tilt3d.is-active .tilt3d-glare { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .tilt3d { transform: none !important; }
+}
+
+/* ---- Custom holo cursor (fine pointers only — see HoloCursor.tsx) ---- */
+@media (pointer: fine) {
+  .holo-cursor-dot,
+  .holo-cursor-ring {
+    position: fixed;
+    top: 0; left: 0;
+    pointer-events: none;
+    z-index: 2147483000;
+    will-change: transform;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+  }
+  .holo-cursor-dot.is-on, .holo-cursor-ring.is-on { opacity: 1; }
+  .holo-cursor-dot {
+    width: 5px; height: 5px;
+    margin: -2.5px 0 0 -2.5px;
+    border-radius: 50%;
+    background: var(--holo-cyan-bright);
+    box-shadow: 0 0 10px 2px rgba(103, 232, 249, 0.85);
+  }
+  .holo-cursor-ring {
+    width: 34px; height: 34px;
+    margin: -17px 0 0 -17px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(103, 232, 249, 0.5);
+    transition: opacity 0.25s ease, width 0.28s ease, height 0.28s ease, margin 0.28s ease,
+                border-color 0.28s ease, background-color 0.28s ease, box-shadow 0.28s ease;
+  }
+  .holo-cursor-ring.is-hover {
+    width: 54px; height: 54px;
+    margin: -27px 0 0 -27px;
+    border-color: rgba(232, 121, 249, 0.85);
+    background: rgba(34, 211, 238, 0.06);
+    box-shadow: 0 0 22px -4px rgba(232, 121, 249, 0.5);
+  }
+  .holo-cursor-ring.is-down {
+    width: 42px; height: 42px;
+    margin: -21px 0 0 -21px;
+    border-color: rgba(165, 243, 252, 0.95);
+  }
+  .holo-ripple {
+    position: fixed;
+    width: 14px; height: 14px;
+    margin: -7px 0 0 -7px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(103, 232, 249, 0.85);
+    pointer-events: none;
+    z-index: 2147482999;
+    animation: holo-ripple 0.65s cubic-bezier(0.2, 0.6, 0.3, 1) forwards;
+  }
+  @keyframes holo-ripple {
+    from { opacity: 0.9; transform: scale(0.35); }
+    to   { opacity: 0;   transform: scale(9); }
+  }
+  /* Cursor spotlight — a soft light that travels with the pointer, lifting
+     panels out of the dark (layered with the starfield parallax = depth). */
+  .holo-spotlight {
+    position: fixed;
+    left: 0; top: 0;
+    width: 1300px; height: 1300px;
+    margin: -650px 0 0 -650px;
+    pointer-events: none;
+    z-index: 120;
+    will-change: transform;
+    background: radial-gradient(circle,
+      rgba(34, 211, 238, 0.075) 0%,
+      rgba(99, 102, 241, 0.05) 30%,
+      rgba(232, 121, 249, 0.025) 45%,
+      transparent 65%);
+    mix-blend-mode: screen;
+  }
+}
+
+/* ---- Floating decorative orbs (parallaxed by --par-x / --par-y) ---- */
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-14px); }
+}
+.holo-orb {
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(1px);
+  z-index: 1;
+  animation: float-y 7s ease-in-out infinite;
+  transform: translate3d(calc(var(--par-x, 0px) * var(--depth, 1)), calc(var(--par-y, 0px) * var(--depth, 1)), 0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .holo-orb { animation: none; }
 }
 
 /* ---- Scrollbars ---- */
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: #111827; }
-::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #64748b; }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: #050a14; }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.4), rgba(99, 102, 241, 0.4));
+  border-radius: 5px;
+  border: 2px solid #050a14;
+}
+::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, rgba(34, 211, 238, 0.7), rgba(99, 102, 241, 0.7)); }
 
 /* ---- Animation utilities (replaces the missing tailwindcss-animate plugin) ---- */
 @keyframes lumina-fade-in {
@@ -47,11 +366,14 @@ body {
   100% { background-position: 200% 0; }
 }
 @keyframes lumina-pulse-glow {
-  0%, 100% { box-shadow: 0 0 24px rgba(99, 102, 241, 0.25); }
-  50% { box-shadow: 0 0 48px rgba(99, 102, 241, 0.55); }
+  0%, 100% { box-shadow: 0 0 24px rgba(34, 211, 238, 0.3); }
+  50% { box-shadow: 0 0 52px rgba(34, 211, 238, 0.6), 0 0 90px -20px rgba(232, 121, 249, 0.5); }
 }
 @keyframes lumina-spin-slow {
   to { transform: rotate(360deg); }
+}
+@keyframes lumina-spin-rev {
+  to { transform: rotate(-360deg); }
 }
 
 .animate-fade-in { animation: lumina-fade-in 0.5s ease both; }
@@ -60,34 +382,38 @@ body {
 .animate-slide-down { animation: lumina-slide-down 0.4s ease both; }
 .animate-pulse-glow { animation: lumina-pulse-glow 2.2s ease-in-out infinite; }
 .animate-spin-slow { animation: lumina-spin-slow 1.6s linear infinite; }
+.animate-spin-rev-slow { animation: lumina-spin-rev 5.5s linear infinite; }
 
-/* Shimmer loading bar */
+/* Shimmer loading bar — holo spectrum */
 .shimmer-bar {
-  background: linear-gradient(90deg, transparent 0%, rgba(129, 140, 248, 0.6) 50%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(103, 232, 249, 0.85) 35%, rgba(232, 121, 249, 0.7) 65%, transparent 100%);
   background-size: 200% 100%;
   animation: lumina-shimmer 1.4s linear infinite;
 }
 
-/* Dotted background for the stage */
-.stage-bg {
-  background-image: radial-gradient(rgba(148, 163, 184, 0.14) 1px, transparent 1px);
-  background-size: 22px 22px;
+/* Range/select resets for dark theme */
+select option { background-color: #060d1c; color: #e2e8f0; }
+
+/* Focus visibility — holographic ring */
+:focus-visible {
+  outline: 2px solid rgba(103, 232, 249, 0.7);
+  outline-offset: 2px;
 }
 
-/* Range/select resets for dark theme */
-select option { background-color: #0f172a; color: #e2e8f0; }
-
 /*
- * Respect reduced-motion preferences for the entrance animations only. The
- * spinners/shimmer are intentionally left running: they are the "work in
- * progress" signal for a generation that can take a minute, and freezing them
- * would look like the app hung.
+ * Respect reduced-motion preferences for decorative motion. Spinners/shimmer
+ * are intentionally left running: they are the "work in progress" signal for a
+ * generation that can take a minute, and freezing them would look like the app
+ * hung. (Tilt3D / HoloCursor / HoloBackground also self-disable in JS.)
  */
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in,
   .animate-zoom-in,
   .animate-slide-up,
-  .animate-slide-down { animation-duration: 0.01ms !important; }
+  .animate-slide-down,
+  .animate-holo-flicker,
+  .holo-scan-line,
+  .holo-btn:not(:disabled)::after { animation-duration: 0.01ms !important; }
 }
 
 /* Images that fail to decode keep their frame instead of collapsing the layout. */
